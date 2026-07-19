@@ -1,5 +1,5 @@
 // ═══ start.ai web client ═══════════════════════════════════════════════
-const API = (window.START_AI_CONFIG && window.START_AI_CONFIG.apiBase) || "";
+const API = (window.START_AI_CONFIG && window.START_AI_CONFIG.apiBase) || "https://backend-0v74.onrender.com";
 
 const state = { userId: null, sessionId: null, planId: null, plan: null, started: false };
 
