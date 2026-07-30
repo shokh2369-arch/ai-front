@@ -4,4 +4,5 @@
 // e.g. "http://localhost:8080".
 window.START_AI_CONFIG = {
   apiBase: "",
+  demoMode: true,
 };

@@ -1,5 +1,6 @@
 // ═══ start.ai web client ═══════════════════════════════════════════════
 const API = (window.START_AI_CONFIG && window.START_AI_CONFIG.apiBase) || "https://backend-0v74.onrender.com";
+const DEMO_MODE = !!(window.START_AI_CONFIG && window.START_AI_CONFIG.demoMode);
 
 const state = { userId: null, sessionId: null, planId: null, plan: null, started: false };
 
@@ -134,7 +135,172 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const WARN_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
 
+const DEMO_DB = {
+  plans: {},
+  calendars: {},
+  session: { userId: "demo-user", sessionId: "demo-session" },
+};
+
+function uid(prefix) {
+  return prefix + "-" + Math.random().toString(36).slice(2, 10);
+}
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
+}
+function lower(s) {
+  return String(s || "").toLowerCase();
+}
+function inferSkill(msg) {
+  const m = lower(msg);
+  if (m.includes("ielts")) return "IELTS 7.0";
+  if (m.includes("guitar") || m.includes("gitara")) return "Guitar";
+  if (m.includes("data") || m.includes("analit")) return "Data analytics";
+  if (m.includes("gamer") || m.includes("geymer")) return "Gaming";
+  return msg || "New skill";
+}
+function planForMessage(message) {
+  const skill = inferSkill(message);
+  const planId = uid("plan");
+  const base = isoToday();
+  const phases = [
+    { key: "foundation", title: "Foundation", weekStart: 1, weekEnd: 2, summary: "Build core habits and fundamentals." },
+    { key: "practice", title: "Guided practice", weekStart: 3, weekEnd: 6, summary: "Improve consistency with focused sessions." },
+    { key: "performance", title: "Performance", weekStart: 7, weekEnd: 10, summary: "Ship outcomes and close your weakest gaps." },
+  ];
+  const milestones = [
+    { phase: "foundation", title: "Baseline check", targetDate: addDays(base, 10) },
+    { phase: "practice", title: "Midpoint review", targetDate: addDays(base, 28) },
+    { phase: "performance", title: "Final benchmark", targetDate: addDays(base, 63) },
+  ];
+  const todos = [
+    { id: uid("todo"), title: "30-minute focused session", priority: "high", durationMin: 30, frequency: "daily", phase: "foundation", status: "proposed" },
+    { id: uid("todo"), title: "Weekly retrospective", priority: "medium", durationMin: 25, frequency: "weekly", phase: "practice", status: "proposed" },
+    { id: uid("todo"), title: "One measurable challenge", priority: "high", durationMin: 60, frequency: "weekly", phase: "performance", status: "proposed" },
+  ];
+  const setupItems = [
+    { name: "Notebook or notes app", priceRange: "$0-10", category: "workflow", rationale: "Capture drills and reflections after each session." },
+    { name: "Timer (Pomodoro style)", priceRange: "$0", category: "focus", rationale: "Keeps practice blocks short and repeatable." },
+    { name: "Learning resource bundle", priceRange: "$10-30", category: "content", rationale: "Provides structured progression and examples." },
+  ];
+  const plan = {
+    id: planId,
+    skill,
+    path: "demo path",
+    assessment: "You can hit this target with short daily sessions and one weekly review.",
+    feasibility: "Demo mode: timeline is illustrative and not API-generated.",
+    phases,
+    milestones,
+    todos,
+    setupItems,
+    weeksTotal: 10,
+    startDate: null,
+    finishDate: null,
+    originalFinishDate: null,
+  };
+  DEMO_DB.plans[planId] = plan;
+  DEMO_DB.calendars[planId] = [];
+  return plan;
+}
+function scheduleForPlan(plan) {
+  const start = addDays(isoToday(), 1);
+  const events = [];
+  let day = start;
+  for (let i = 0; i < 8; i += 1) {
+    events.push({ date: day, startTime: "19:00", title: plan.todos[0].title, status: i < 2 ? "done" : "scheduled" });
+    day = addDays(day, 1);
+  }
+  events.push({ date: addDays(start, 2), startTime: "20:00", title: plan.todos[1].title, status: "scheduled" });
+  events.push({ date: addDays(start, 6), startTime: "10:00", title: plan.todos[2].title, status: "scheduled" });
+  DEMO_DB.calendars[plan.id] = events;
+  plan.startDate = start;
+  plan.finishDate = addDays(start, 70);
+  if (!plan.originalFinishDate) plan.originalFinishDate = plan.finishDate;
+  return { startDate: plan.startDate, finishDate: plan.finishDate };
+}
+function parseBody(opts) {
+  if (!opts || !opts.body) return {};
+  try { return JSON.parse(opts.body); } catch (_) { return {}; }
+}
+async function mockApi(path, opts = {}) {
+  const body = parseBody(opts);
+
+  if (path === "/api/session" && (opts.method || "GET") === "POST") {
+    return {
+      userId: DEMO_DB.session.userId,
+      sessionId: DEMO_DB.session.sessionId,
+      assistant: "Demo mode is on. Pick a suggested skill or type your own goal and I will build a plan locally.",
+    };
+  }
+
+  if (path === "/api/chat" && (opts.method || "GET") === "POST") {
+    const plan = planForMessage(body.message);
+    return {
+      assistant: `Great choice: ${plan.skill}. I drafted a 10-week demo roadmap. Open the Plan tab to review it.`,
+      options: [],
+      planId: plan.id,
+      stage: "planning",
+    };
+  }
+
+  if (path.indexOf("/api/plan/") === 0 && (opts.method || "GET") === "GET") {
+    const planId = path.split("/api/plan/")[1];
+    const plan = DEMO_DB.plans[planId];
+    if (!plan) throw new Error("Plan not found");
+    return JSON.parse(JSON.stringify(plan));
+  }
+
+  if (path === "/api/todo/complete" && (opts.method || "GET") === "POST") {
+    const plan = DEMO_DB.plans[body.planId];
+    if (!plan) throw new Error("Plan not found");
+    plan.todos = (plan.todos || []).map((td) => (td.id === body.todoId ? { ...td, status: "done" } : td));
+    return { ok: true };
+  }
+
+  if (path === "/api/schedule" && (opts.method || "GET") === "POST") {
+    const plan = DEMO_DB.plans[body.planId];
+    if (!plan) throw new Error("Plan not found");
+    return scheduleForPlan(plan);
+  }
+
+  if (path === "/api/schedule/confirm" && (opts.method || "GET") === "POST") {
+    return { ok: true };
+  }
+
+  if (path.indexOf("/api/calendar") === 0 && (opts.method || "GET") === "GET") {
+    const query = path.split("?")[1] || "";
+    const qp = new URLSearchParams(query);
+    const planId = qp.get("planId") || "";
+    return DEMO_DB.calendars[planId] || [];
+  }
+
+  if (path === "/api/rollover" && (opts.method || "GET") === "POST") {
+    const planIds = Object.keys(DEMO_DB.plans);
+    if (!planIds.length) return { asOf: body.asOf, results: [] };
+    const pid = planIds[0];
+    const cal = DEMO_DB.calendars[pid] || [];
+    const moved = cal.filter((ev) => ev.status === "scheduled").slice(0, 1);
+    moved.forEach((ev) => {
+      ev.status = "rolled_over";
+      cal.push({ ...ev, date: addDays(ev.date, 1), status: "scheduled" });
+    });
+    const p = DEMO_DB.plans[pid];
+    const oldFinish = p.finishDate;
+    if (oldFinish) p.finishDate = addDays(oldFinish, moved.length ? 1 : 0);
+    return {
+      asOf: body.asOf,
+      results: [{ moved: moved.length, finishShiftDays: moved.length ? 1 : 0, oldFinish, newFinish: p.finishDate }],
+    };
+  }
+
+  if (path === "/api/meter" && (opts.method || "GET") === "GET") {
+    return { enabled: false, callsTotal: 0, costUsd: 0 };
+  }
+
+  throw new Error("Demo endpoint not implemented: " + path);
+}
+
 async function api(path, opts = {}) {
+  if (DEMO_MODE) return mockApi(path, opts);
   const headers = { "Content-Type": "application/json" };
   if (state.userId) headers["X-User-Id"] = state.userId;
   const res = await fetch(API + path, { headers, ...opts });
@@ -238,8 +404,12 @@ async function loadPlan(planId) {
   $("goalPill").hidden = false;
   $("goalPillText").textContent = state.plan.skill + (state.plan.path ? " · " + state.plan.path : "");
   $("scheduleBtn").disabled = false;
-  $("icsBtn").href = API + "/api/plan/" + planId + "/ics";
-  $("icsBtn").hidden = false;
+  if (DEMO_MODE) {
+    $("icsBtn").hidden = true;
+  } else {
+    $("icsBtn").href = API + "/api/plan/" + planId + "/ics";
+    $("icsBtn").hidden = false;
+  }
   await loadCalendar();
 }
 
