@@ -139,6 +139,7 @@ const DEMO_DB = {
   plans: {},
   calendars: {},
   session: { userId: "demo-user", sessionId: "demo-session" },
+  intake: null,
 };
 
 function uid(prefix) {
@@ -158,22 +159,82 @@ function inferSkill(msg) {
   if (m.includes("gamer") || m.includes("geymer")) return "Gaming";
   return msg || "New skill";
 }
-function planForMessage(message) {
+function intakeText(kind) {
+  const dict = {
+    en: {
+      askLevel: "Great goal. What is your current level?",
+      askTime: "How much time can you invest per day?",
+      askDeadline: "Choose your target timeline:",
+      done: "Perfect. I used your current condition to draft a personalized demo roadmap.",
+      level: ["Beginner", "Intermediate", "Advanced"],
+      time: ["30 min/day", "60 min/day", "90 min/day"],
+      deadline: ["2 months", "3 months", "6 months"],
+    },
+    ru: {
+      askLevel: "Отличная цель. Какой у вас текущий уровень?",
+      askTime: "Сколько времени в день вы готовы уделять?",
+      askDeadline: "Выберите желаемый срок:",
+      done: "Отлично. Я учёл ваши условия и собрал персональный демо-план.",
+      level: ["Начальный", "Средний", "Продвинутый"],
+      time: ["30 мин/день", "60 мин/день", "90 мин/день"],
+      deadline: ["2 месяца", "3 месяца", "6 месяцев"],
+    },
+    uz: {
+      askLevel: "Zo'r maqsad. Hozirgi darajangiz qanday?",
+      askTime: "Kuniga qancha vaqt ajrata olasiz?",
+      askDeadline: "Maqsad muddatini tanlang:",
+      done: "Ajoyib. Sizning holatingizga mos demo reja tuzdim.",
+      level: ["Boshlang'ich", "O'rta", "Yuqori"],
+      time: ["30 daqiqa/kun", "60 daqiqa/kun", "90 daqiqa/kun"],
+      deadline: ["2 oy", "3 oy", "6 oy"],
+    },
+  };
+  const d = dict[LANG] || dict.en;
+  if (kind === "level") return d.level;
+  if (kind === "time") return d.time;
+  if (kind === "deadline") return d.deadline;
+  return d;
+}
+function parseLevel(msg) {
+  const m = lower(msg);
+  if (m.includes("begin") || m.includes("boshl") || m.includes("нач")) return "beginner";
+  if (m.includes("inter") || m.includes("o'rta") || m.includes("сред")) return "intermediate";
+  if (m.includes("adv") || m.includes("yuqori") || m.includes("прод")) return "advanced";
+  return "beginner";
+}
+function parseDailyMinutes(msg) {
+  const m = lower(msg);
+  if (m.includes("90")) return 90;
+  if (m.includes("60")) return 60;
+  return 30;
+}
+function parseMonths(msg) {
+  const m = lower(msg);
+  if (m.includes("6")) return 6;
+  if (m.includes("3")) return 3;
+  return 2;
+}
+function planForMessage(message, profile = {}) {
   const skill = inferSkill(message);
   const planId = uid("plan");
   const base = isoToday();
+  const level = profile.level || "beginner";
+  const dailyMin = profile.dailyMin || 30;
+  const months = profile.deadlineMonths || 3;
+  const weeksTotal = Math.max(8, months * 4);
+  const pace = dailyMin >= 90 ? "fast" : (dailyMin >= 60 ? "steady" : "light");
   const phases = [
     { key: "foundation", title: "Foundation", weekStart: 1, weekEnd: 2, summary: "Build core habits and fundamentals." },
-    { key: "practice", title: "Guided practice", weekStart: 3, weekEnd: 6, summary: "Improve consistency with focused sessions." },
-    { key: "performance", title: "Performance", weekStart: 7, weekEnd: 10, summary: "Ship outcomes and close your weakest gaps." },
+    { key: "practice", title: "Guided practice", weekStart: 3, weekEnd: Math.max(5, Math.floor(weeksTotal * 0.65)), summary: "Improve consistency with focused sessions." },
+    { key: "performance", title: "Performance", weekStart: Math.max(6, Math.floor(weeksTotal * 0.65) + 1), weekEnd: weeksTotal, summary: "Ship outcomes and close your weakest gaps." },
   ];
   const milestones = [
     { phase: "foundation", title: "Baseline check", targetDate: addDays(base, 10) },
-    { phase: "practice", title: "Midpoint review", targetDate: addDays(base, 28) },
-    { phase: "performance", title: "Final benchmark", targetDate: addDays(base, 63) },
+    { phase: "practice", title: "Midpoint review", targetDate: addDays(base, Math.floor((weeksTotal * 7) / 2)) },
+    { phase: "performance", title: "Final benchmark", targetDate: addDays(base, weeksTotal * 7 - 7) },
   ];
   const todos = [
-    { id: uid("todo"), title: "30-minute focused session", priority: "high", durationMin: 30, frequency: "daily", phase: "foundation", status: "proposed" },
+    { id: uid("todo"), title: dailyMin + "-minute focused session", priority: "high", durationMin: dailyMin, frequency: "daily", phase: "foundation", status: "proposed" },
     { id: uid("todo"), title: "Weekly retrospective", priority: "medium", durationMin: 25, frequency: "weekly", phase: "practice", status: "proposed" },
     { id: uid("todo"), title: "One measurable challenge", priority: "high", durationMin: 60, frequency: "weekly", phase: "performance", status: "proposed" },
   ];
@@ -185,14 +246,14 @@ function planForMessage(message) {
   const plan = {
     id: planId,
     skill,
-    path: "demo path",
-    assessment: "You can hit this target with short daily sessions and one weekly review.",
-    feasibility: "Demo mode: timeline is illustrative and not API-generated.",
+    path: `demo path · ${level} · ${dailyMin}m/day`,
+    assessment: `Your ${level} baseline with ${dailyMin} minutes/day supports a ${pace} progression track.`,
+    feasibility: `Demo mode: timeline targets about ${months} month(s) and is illustrative.`,
     phases,
     milestones,
     todos,
     setupItems,
-    weeksTotal: 10,
+    weeksTotal,
     startDate: null,
     finishDate: null,
     originalFinishDate: null,
@@ -203,6 +264,7 @@ function planForMessage(message) {
 }
 function scheduleForPlan(plan) {
   const start = addDays(isoToday(), 1);
+  const totalWeeks = plan.weeksTotal || 10;
   const events = [];
   let day = start;
   for (let i = 0; i < 8; i += 1) {
@@ -213,7 +275,7 @@ function scheduleForPlan(plan) {
   events.push({ date: addDays(start, 6), startTime: "10:00", title: plan.todos[2].title, status: "scheduled" });
   DEMO_DB.calendars[plan.id] = events;
   plan.startDate = start;
-  plan.finishDate = addDays(start, 70);
+  plan.finishDate = addDays(start, totalWeeks * 7);
   if (!plan.originalFinishDate) plan.originalFinishDate = plan.finishDate;
   return { startDate: plan.startDate, finishDate: plan.finishDate };
 }
@@ -228,14 +290,47 @@ async function mockApi(path, opts = {}) {
     return {
       userId: DEMO_DB.session.userId,
       sessionId: DEMO_DB.session.sessionId,
-      assistant: "Demo mode is on. Pick a suggested skill or type your own goal and I will build a plan locally.",
+      assistant: "Demo mode is on. Pick a suggested skill or type your own goal. I will ask about your condition before building the plan.",
     };
   }
 
   if (path === "/api/chat" && (opts.method || "GET") === "POST") {
-    const plan = planForMessage(body.message);
+    const msg = String(body.message || "").trim();
+    if (!DEMO_DB.intake) {
+      DEMO_DB.intake = { goal: msg, step: "level" };
+      return {
+        assistant: intakeText().askLevel,
+        options: intakeText("level"),
+        stage: "intake_level",
+      };
+    }
+    if (DEMO_DB.intake.step === "level") {
+      DEMO_DB.intake.level = parseLevel(msg);
+      DEMO_DB.intake.step = "time";
+      return {
+        assistant: intakeText().askTime,
+        options: intakeText("time"),
+        stage: "intake_time",
+      };
+    }
+    if (DEMO_DB.intake.step === "time") {
+      DEMO_DB.intake.dailyMin = parseDailyMinutes(msg);
+      DEMO_DB.intake.step = "deadline";
+      return {
+        assistant: intakeText().askDeadline,
+        options: intakeText("deadline"),
+        stage: "intake_deadline",
+      };
+    }
+    const months = parseMonths(msg);
+    const plan = planForMessage(DEMO_DB.intake.goal, {
+      level: DEMO_DB.intake.level,
+      dailyMin: DEMO_DB.intake.dailyMin,
+      deadlineMonths: months,
+    });
+    DEMO_DB.intake = null;
     return {
-      assistant: `Great choice: ${plan.skill}. I drafted a 10-week demo roadmap. Open the Plan tab to review it.`,
+      assistant: `${intakeText().done} Open the Plan tab to review it.`,
       options: [],
       planId: plan.id,
       stage: "planning",
@@ -562,6 +657,30 @@ function renderCalendar(events) {
   events = events || [];
   const box = $("calContent");
   box.innerHTML = "";
+  const todos = (state.plan && state.plan.todos) || [];
+
+  if (todos.length) {
+    const todoSection = el("div", "cal-todos");
+    todoSection.appendChild(el("div", "section-label", t("tasks")));
+    todos.forEach((td, i) => {
+      const done = td.status === "done";
+      const row = el("div", "todo" + (done ? " done" : ""));
+      row.style.animationDelay = Math.min(i * 0.03, 0.24) + "s";
+      const label = el("label", "check");
+      label.innerHTML = `<input type="checkbox" ${done ? "checked disabled" : ""} aria-label="done"><span class="box">${CHECK_SVG}</span>`;
+      label.querySelector("input").onchange = () => completeTodo(td.id);
+      const body = el("div", "todo-body");
+      body.innerHTML =
+        `<div class="t">${esc(td.title)}</div>
+         <div class="todo-meta"><span class="pill ${esc(td.priority)}">${esc(tg("prio", td.priority))}</span>
+         <span>${td.durationMin} ${t("min")}</span><span>${esc(tg("freq", td.frequency))}</span>${td.phase ? `<span>${esc(td.phase)}</span>` : ""}</div>`;
+      row.appendChild(label);
+      row.appendChild(body);
+      todoSection.appendChild(row);
+    });
+    box.appendChild(todoSection);
+  }
+
   if (!events.length) { $("calEmpty").hidden = false; return; }
   $("calEmpty").hidden = true;
 
