@@ -165,7 +165,7 @@ function intakeText(kind) {
       askLevel: "Great goal. What is your current level?",
       askTime: "How much time can you invest per day?",
       askDeadline: "Choose your target timeline:",
-      done: "Perfect. I used your current condition to draft a personalized demo roadmap.",
+      done: "Perfect. I adapted a real-world study roadmap to your level, daily time, and deadline.",
       level: ["Beginner", "Intermediate", "Advanced"],
       time: ["30 min/day", "60 min/day", "90 min/day"],
       deadline: ["2 months", "3 months", "6 months"],
@@ -174,7 +174,7 @@ function intakeText(kind) {
       askLevel: "Отличная цель. Какой у вас текущий уровень?",
       askTime: "Сколько времени в день вы готовы уделять?",
       askDeadline: "Выберите желаемый срок:",
-      done: "Отлично. Я учёл ваши условия и собрал персональный демо-план.",
+      done: "Отлично. Я адаптировал реальный учебный план под ваш уровень, время и срок.",
       level: ["Начальный", "Средний", "Продвинутый"],
       time: ["30 мин/день", "60 мин/день", "90 мин/день"],
       deadline: ["2 месяца", "3 месяца", "6 месяцев"],
@@ -183,7 +183,7 @@ function intakeText(kind) {
       askLevel: "Zo'r maqsad. Hozirgi darajangiz qanday?",
       askTime: "Kuniga qancha vaqt ajrata olasiz?",
       askDeadline: "Maqsad muddatini tanlang:",
-      done: "Ajoyib. Sizning holatingizga mos demo reja tuzdim.",
+      done: "Ajoyib. Haqiqiy o'quv yo'l xaritasini daraja, vaqt va muddatingizga mosladim.",
       level: ["Boshlang'ich", "O'rta", "Yuqori"],
       time: ["30 daqiqa/kun", "60 daqiqa/kun", "90 daqiqa/kun"],
       deadline: ["2 oy", "3 oy", "6 oy"],
@@ -214,6 +214,176 @@ function parseMonths(msg) {
   if (m.includes("3")) return 3;
   return 2;
 }
+function skillKey(skill) {
+  if (skill === "IELTS 7.0") return "ielts";
+  if (skill === "Guitar") return "guitar";
+  if (skill === "Data analytics") return "data";
+  if (skill === "Gaming") return "gaming";
+  return "generic";
+}
+
+// Real-world roadmaps adapted from public study plans (IELTS, guitar, analytics, FPS training).
+function skillBlueprint(skill, level, dailyMin, months) {
+  const weeksTotal = Math.max(8, months * 4);
+  const w1 = Math.max(2, Math.floor(weeksTotal * 0.25));
+  const w2 = Math.max(w1 + 2, Math.floor(weeksTotal * 0.65));
+  const vocab = {
+    ielts: {
+      path: "Academic IELTS Band 7 track",
+      assessment: level === "beginner"
+        ? "From beginner English, Band 7 needs language building first, then exam strategy — not mock tests on day one."
+        : level === "intermediate"
+          ? "You already have usable English; this plan shifts early into IELTS formats and weak-skill drills."
+          : "Advanced base: accelerate into timed mocks, writing feedback loops, and speaking fluency polish.",
+      feasibility: months < 3 && level === "beginner"
+        ? "Band 7 in under 3 months from beginner is aggressive; expect foundation + strategy compression."
+        : "Typical Band 7 paths use ~200–300 focused hours across Listening, Reading, Writing, Speaking.",
+      phases: [
+        { key: "foundation", title: "General English foundation", weekStart: 1, weekEnd: w1, summary: "Grammar (tenses, articles, complex sentences), academic vocabulary, and daily speaking/listening input." },
+        { key: "practice", title: "IELTS skill development", weekStart: w1 + 1, weekEnd: w2, summary: "Learn all question types; drill Reading skimming/scanning, Writing Task 1/2 structure, Speaking Parts 1–3." },
+        { key: "performance", title: "Mock exams & polish", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Full timed mocks, error logs, weakest-module overtime, and exam-day stamina." },
+      ],
+      milestones: [
+        { phase: "foundation", title: "Diagnostic mock + baseline band" },
+        { phase: "practice", title: "First section targets (L/R ≈ 6.5 practice)" },
+        { phase: "performance", title: "Full mock under exam conditions" },
+      ],
+      todos: [
+        { title: "Vocabulary + grammar block", priority: "high", durationMin: Math.min(dailyMin, 25), frequency: "daily", phase: "foundation" },
+        { title: "Listening or Reading timed drill", priority: "high", durationMin: Math.max(20, Math.floor(dailyMin * 0.5)), frequency: "daily", phase: "practice" },
+        { title: "Writing Task 1 or Task 2", priority: "high", durationMin: 40, frequency: "twice_weekly", phase: "practice" },
+        { title: "Speaking practice (record + review)", priority: "medium", durationMin: 15, frequency: "daily", phase: "foundation" },
+        { title: "Full IELTS mock + error analysis", priority: "high", durationMin: 180, frequency: "weekly", phase: "performance" },
+      ],
+      setup: [
+        { name: "Cambridge IELTS practice books / free mocks", priceRange: "$0-40", category: "practice", rationale: "Official-style papers for timed Listening/Reading/Writing." },
+        { name: "Anki or Quizlet (academic word lists)", priceRange: "$0", category: "vocab", rationale: "Daily spaced-repetition vocabulary for Band 7 writing/speaking." },
+        { name: "Voice recorder (phone)", priceRange: "$0", category: "speaking", rationale: "Self-review fluency, pronunciation, and Part 2 timing." },
+      ],
+    },
+    guitar: {
+      path: "Open chords → songs track",
+      assessment: level === "beginner"
+        ? "Beginner path: posture, open chords (Em, Am, G, C, D), slow transitions, then first full songs."
+        : level === "intermediate"
+          ? "Intermediate path: faster changes, barre chords, metronome rhythm, and 3–4 performance-ready songs."
+          : "Advanced path: barre fluency, riffs/power chords, dynamics, and clean recorded takes.",
+      feasibility: "Short daily practice (20–40+ min) beats long rare sessions; first recognizable songs usually land in 4–12 weeks.",
+      phases: [
+        { key: "foundation", title: "Setup & open chords", weekStart: 1, weekEnd: w1, summary: "Hold/tune, fretting, open chords Em/Am/G/C/D, and pain-free short sessions." },
+        { key: "practice", title: "Transitions & strumming", weekStart: w1 + 1, weekEnd: w2, summary: "Slow chord changes, basic strum patterns with a metronome, 2–3 chord songs." },
+        { key: "performance", title: "Songs & confidence", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Full songs start-to-finish, speed up changes, optional barre/riffs, record yourself." },
+      ],
+      milestones: [
+        { phase: "foundation", title: "Clean Em + Am + one 2-chord loop" },
+        { phase: "practice", title: "Play a 3-chord song with steady strum" },
+        { phase: "performance", title: "Perform/record one full song" },
+      ],
+      todos: [
+        { title: "Warm-up fretting / finger drills", priority: "medium", durationMin: 5, frequency: "daily", phase: "foundation" },
+        { title: "Open chord practice (clean frets)", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.4)), frequency: "daily", phase: "foundation" },
+        { title: "Chord transition drills (metronome)", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.35)), frequency: "daily", phase: "practice" },
+        { title: "Strumming pattern + song practice", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.35)), frequency: "daily", phase: "practice" },
+        { title: "Record one song take & review", priority: "medium", durationMin: 30, frequency: "weekly", phase: "performance" },
+      ],
+      setup: [
+        { name: "Acoustic or electric starter guitar", priceRange: "$50-200", category: "instrument", rationale: "Playable action matters more than brand for beginners." },
+        { name: "Clip-on tuner + picks", priceRange: "$0-15", category: "gear", rationale: "In-tune practice builds ear and clean chords faster." },
+        { name: "JustinGuitar / free YouTube beginner course", priceRange: "$0", category: "lessons", rationale: "Structured stages: chords → strumming → songs." },
+      ],
+    },
+    data: {
+      path: "Excel → SQL → Python/BI portfolio",
+      assessment: level === "beginner"
+        ? "Start with Excel/Sheets and stats, then SQL, then Python/Pandas or Power BI — projects last."
+        : level === "intermediate"
+          ? "Skip basics: deepen SQL joins/windows, Pandas EDA, and one BI dashboard project early."
+          : "Advanced: portfolio polish — window functions, end-to-end pipelines, and interview-style cases.",
+      feasibility: "Job-ready analytics roadmaps commonly use 8–12 weeks of daily practice plus 2–3 portfolio projects.",
+      phases: [
+        { key: "foundation", title: "Excel & analytics basics", weekStart: 1, weekEnd: w1, summary: "Pivot tables, VLOOKUP/XLOOKUP, charts, cleaning, and core stats (mean, distribution, correlation)." },
+        { key: "practice", title: "SQL + Python/BI tools", weekStart: w1 + 1, weekEnd: w2, summary: "SELECT/JOINs/GROUP BY, then Pandas cleaning/viz or Power BI models and dashboards." },
+        { key: "performance", title: "Portfolio & interview cases", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Ship 2–3 end-to-end projects on GitHub/LinkedIn; timed SQL drills and case write-ups." },
+      ],
+      milestones: [
+        { phase: "foundation", title: "Sales dashboard in Excel/Sheets" },
+        { phase: "practice", title: "Multi-table SQL analysis + first Python/BI report" },
+        { phase: "performance", title: "3 portfolio projects published" },
+      ],
+      todos: [
+        { title: "Excel/Sheets drills (pivots, lookups)", priority: "high", durationMin: Math.min(dailyMin, 40), frequency: "daily", phase: "foundation" },
+        { title: "SQL practice set (JOINs, aggregates)", priority: "high", durationMin: Math.max(25, Math.floor(dailyMin * 0.6)), frequency: "daily", phase: "practice" },
+        { title: "Python Pandas / Power BI lab", priority: "high", durationMin: Math.max(30, Math.floor(dailyMin * 0.7)), frequency: "thrice_weekly", phase: "practice" },
+        { title: "Portfolio project work block", priority: "high", durationMin: Math.max(45, dailyMin), frequency: "twice_weekly", phase: "performance" },
+        { title: "SQL interview questions review", priority: "medium", durationMin: 30, frequency: "weekly", phase: "performance" },
+      ],
+      setup: [
+        { name: "Google Sheets or Excel", priceRange: "$0-10", category: "tools", rationale: "Fastest path to business-style analysis and dashboards." },
+        { name: "SQLite / Mode / free SQL playground", priceRange: "$0", category: "sql", rationale: "Practice JOINs and aggregates on real-ish tables." },
+        { name: "Kaggle datasets + GitHub", priceRange: "$0", category: "portfolio", rationale: "Public datasets and a repo to showcase end-to-end work." },
+      ],
+    },
+    gaming: {
+      path: "Aim + gamesense competitive track",
+      assessment: level === "beginner"
+        ? "Lock sensitivity, short aim warm-ups, crosshair placement, then deathmatch — not endless ranked grind."
+        : level === "intermediate"
+          ? "Structured aim blocks + VOD review of deaths; one focus mechanic per session."
+          : "Advanced: tracking/flicks/micro-adjustments, map roles, and weekly VOD coaching loops.",
+      feasibility: "15–20 min deliberate aim training daily plus focused in-game practice beats hours of unfocused ranked.",
+      phases: [
+        { key: "foundation", title: "Setup & fundamentals", weekStart: 1, weekEnd: w1, summary: "Lock DPI/sens for 30 days, ergonomics, crosshair at head height, basic movement/counter-strafe." },
+        { key: "practice", title: "Aim drills + applied DM", weekStart: w1 + 1, weekEnd: w2, summary: "Aimlabs/KovaaK warm-up (tracking/flicks), range routines, then deathmatch applying one focus skill." },
+        { key: "performance", title: "Ranked + VOD review", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Ranked with one focus per session; review deaths for positioning/decision mistakes weekly." },
+      ],
+      milestones: [
+        { phase: "foundation", title: "Sens locked + 7-day warm-up streak" },
+        { phase: "practice", title: "Measurable aim-trainer score uplift" },
+        { phase: "performance", title: "VOD review habit + ranked focus sessions" },
+      ],
+      todos: [
+        { title: "Aim trainer warm-up (same routine)", priority: "high", durationMin: Math.min(20, dailyMin), frequency: "daily", phase: "foundation" },
+        { title: "Crosshair placement / range drill", priority: "high", durationMin: 15, frequency: "daily", phase: "practice" },
+        { title: "Deathmatch — one focus mechanic", priority: "high", durationMin: Math.max(20, dailyMin - 20), frequency: "daily", phase: "practice" },
+        { title: "Ranked session (deliberate focus)", priority: "medium", durationMin: Math.max(45, dailyMin), frequency: "thrice_weekly", phase: "performance" },
+        { title: "VOD review 2–3 deaths", priority: "high", durationMin: 20, frequency: "weekly", phase: "performance" },
+      ],
+      setup: [
+        { name: "Aimlabs (free) or KovaaK’s", priceRange: "$0-10", category: "training", rationale: "Repeatable aim scenarios to track accuracy over weeks." },
+        { name: "Stable mouse + large pad", priceRange: "$20-60", category: "gear", rationale: "Consistent sens and space for controlled aim." },
+        { name: "144Hz+ monitor (if possible)", priceRange: "$0-150", category: "display", rationale: "Clearer motion helps tracking; optional if already set up." },
+      ],
+    },
+    generic: {
+      path: "Custom skill track",
+      assessment: `Custom plan for ${skill}: fundamentals → deliberate practice → measurable performance.`,
+      feasibility: `Adapted to ${level} level, ${dailyMin} min/day, ~${months} month horizon.`,
+      phases: [
+        { key: "foundation", title: "Foundation", weekStart: 1, weekEnd: w1, summary: "Core concepts, tools setup, and a sustainable daily habit." },
+        { key: "practice", title: "Deliberate practice", weekStart: w1 + 1, weekEnd: w2, summary: "Skill drills with feedback; increase difficulty weekly." },
+        { key: "performance", title: "Performance outcomes", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Projects, mocks, or public practice that prove progress." },
+      ],
+      milestones: [
+        { phase: "foundation", title: "Baseline skill check" },
+        { phase: "practice", title: "Midpoint progress review" },
+        { phase: "performance", title: "Final demonstration" },
+      ],
+      todos: [
+        { title: `${dailyMin}-minute focused practice`, priority: "high", durationMin: dailyMin, frequency: "daily", phase: "foundation" },
+        { title: "Weekly skill challenge", priority: "high", durationMin: 45, frequency: "weekly", phase: "practice" },
+        { title: "Progress review & next-week plan", priority: "medium", durationMin: 20, frequency: "weekly", phase: "performance" },
+      ],
+      setup: [
+        { name: "Notes app", priceRange: "$0", category: "workflow", rationale: "Log drills and weekly retrospectives." },
+        { name: "Timer", priceRange: "$0", category: "focus", rationale: "Protect deep-work blocks." },
+        { name: "One trusted course or book", priceRange: "$0-40", category: "content", rationale: "Avoid random tutorial hopping." },
+      ],
+    },
+  };
+  const bp = vocab[skillKey(skill)] || vocab.generic;
+  return { weeksTotal, ...bp };
+}
+
 function planForMessage(message, profile = {}) {
   const skill = inferSkill(message);
   const planId = uid("plan");
@@ -221,34 +391,31 @@ function planForMessage(message, profile = {}) {
   const level = profile.level || "beginner";
   const dailyMin = profile.dailyMin || 30;
   const months = profile.deadlineMonths || 3;
-  const weeksTotal = Math.max(8, months * 4);
-  const pace = dailyMin >= 90 ? "fast" : (dailyMin >= 60 ? "steady" : "light");
-  const phases = [
-    { key: "foundation", title: "Foundation", weekStart: 1, weekEnd: 2, summary: "Build core habits and fundamentals." },
-    { key: "practice", title: "Guided practice", weekStart: 3, weekEnd: Math.max(5, Math.floor(weeksTotal * 0.65)), summary: "Improve consistency with focused sessions." },
-    { key: "performance", title: "Performance", weekStart: Math.max(6, Math.floor(weeksTotal * 0.65) + 1), weekEnd: weeksTotal, summary: "Ship outcomes and close your weakest gaps." },
-  ];
-  const milestones = [
-    { phase: "foundation", title: "Baseline check", targetDate: addDays(base, 10) },
-    { phase: "practice", title: "Midpoint review", targetDate: addDays(base, Math.floor((weeksTotal * 7) / 2)) },
-    { phase: "performance", title: "Final benchmark", targetDate: addDays(base, weeksTotal * 7 - 7) },
-  ];
-  const todos = [
-    { id: uid("todo"), title: dailyMin + "-minute focused session", priority: "high", durationMin: dailyMin, frequency: "daily", phase: "foundation", status: "proposed" },
-    { id: uid("todo"), title: "Weekly retrospective", priority: "medium", durationMin: 25, frequency: "weekly", phase: "practice", status: "proposed" },
-    { id: uid("todo"), title: "One measurable challenge", priority: "high", durationMin: 60, frequency: "weekly", phase: "performance", status: "proposed" },
-  ];
-  const setupItems = [
-    { name: "Notebook or notes app", priceRange: "$0-10", category: "workflow", rationale: "Capture drills and reflections after each session." },
-    { name: "Timer (Pomodoro style)", priceRange: "$0", category: "focus", rationale: "Keeps practice blocks short and repeatable." },
-    { name: "Learning resource bundle", priceRange: "$10-30", category: "content", rationale: "Provides structured progression and examples." },
-  ];
+  const bp = skillBlueprint(skill, level, dailyMin, months);
+  const weeksTotal = bp.weeksTotal;
+
+  const phases = bp.phases;
+  const milestones = bp.milestones.map((m, i) => ({
+    ...m,
+    targetDate: addDays(base, i === 0 ? 10 : (i === 1 ? Math.floor((weeksTotal * 7) / 2) : weeksTotal * 7 - 7)),
+  }));
+  const todos = bp.todos.map((td) => ({
+    id: uid("todo"),
+    title: td.title,
+    priority: td.priority,
+    durationMin: td.durationMin,
+    frequency: td.frequency,
+    phase: td.phase,
+    status: "proposed",
+  }));
+  const setupItems = bp.setup;
+
   const plan = {
     id: planId,
     skill,
-    path: `demo path · ${level} · ${dailyMin}m/day`,
-    assessment: `Your ${level} baseline with ${dailyMin} minutes/day supports a ${pace} progression track.`,
-    feasibility: `Demo mode: timeline targets about ${months} month(s) and is illustrative.`,
+    path: `${bp.path} · ${level} · ${dailyMin}m/day`,
+    assessment: bp.assessment,
+    feasibility: bp.feasibility,
     phases,
     milestones,
     todos,
@@ -265,14 +432,35 @@ function planForMessage(message, profile = {}) {
 function scheduleForPlan(plan) {
   const start = addDays(isoToday(), 1);
   const totalWeeks = plan.weeksTotal || 10;
+  const todos = plan.todos || [];
   const events = [];
-  let day = start;
-  for (let i = 0; i < 8; i += 1) {
-    events.push({ date: day, startTime: "19:00", title: plan.todos[0].title, status: i < 2 ? "done" : "scheduled" });
-    day = addDays(day, 1);
+  const daily = todos.filter((td) => td.frequency === "daily");
+  const weekly = todos.filter((td) => td.frequency === "weekly" || td.frequency === "twice_weekly" || td.frequency === "thrice_weekly");
+
+  for (let i = 0; i < 7; i += 1) {
+    const day = addDays(start, i);
+    daily.forEach((td, idx) => {
+      const hour = 18 + idx;
+      events.push({
+        date: day,
+        startTime: String(Math.min(hour, 21)).padStart(2, "0") + ":00",
+        title: td.title,
+        status: i < 1 && idx === 0 ? "done" : "scheduled",
+      });
+    });
   }
-  events.push({ date: addDays(start, 2), startTime: "20:00", title: plan.todos[1].title, status: "scheduled" });
-  events.push({ date: addDays(start, 6), startTime: "10:00", title: plan.todos[2].title, status: "scheduled" });
+  weekly.forEach((td, idx) => {
+    events.push({
+      date: addDays(start, Math.min(6, 1 + idx * 2)),
+      startTime: "10:00",
+      title: td.title,
+      status: "scheduled",
+    });
+  });
+  if (!events.length && todos.length) {
+    events.push({ date: start, startTime: "19:00", title: todos[0].title, status: "scheduled" });
+  }
+
   DEMO_DB.calendars[plan.id] = events;
   plan.startDate = start;
   plan.finishDate = addDays(start, totalWeeks * 7);
