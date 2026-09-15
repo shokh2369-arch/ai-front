@@ -1,8 +1,8 @@
 // start.ai frontend runtime config.
-// When the Go backend serves this folder (default), same-origin "" just works.
-// If you run the frontend separately, set this to your backend URL,
-// e.g. "http://localhost:8080".
+// apiBase "" means same origin. The Go backend on :8080 sends no CORS headers
+// and does not serve this folder, so the page must be served from the same
+// origin as the API — either by Go itself, or by a proxy in front of both.
 window.START_AI_CONFIG = {
   apiBase: "",
-  demoMode: true,
+  demoMode: false,
 };

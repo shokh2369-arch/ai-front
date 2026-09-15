@@ -1,130 +1,91 @@
 // ═══ start.ai web client ═══════════════════════════════════════════════
-const API = (window.START_AI_CONFIG && window.START_AI_CONFIG.apiBase) || "https://backend-0v74.onrender.com";
-const DEMO_MODE = !!(window.START_AI_CONFIG && window.START_AI_CONFIG.demoMode);
+// Loaded after storage.js, i18n.js and demo-api.js (see index.html).
+const CFG = window.START_AI_CONFIG || {};
+// An empty apiBase is a real answer ("same origin"), not a missing one — so it
+// must not fall through to the hosted fallback.
+const API = typeof CFG.apiBase === "string" ? CFG.apiBase : "https://backend-0v74.onrender.com";
+const DEMO_MODE = !!CFG.demoMode;
+// Developer instrumentation stays out of the product unless asked for.
+const DEBUG = new URLSearchParams(location.search).has("debug");
 
-const state = { userId: null, sessionId: null, planId: null, plan: null, started: false };
-
-// ── i18n ───────────────────────────────────────────────────────────────
-let LANG = localStorage.getItem("startai_lang") || "en";
-
-const I18N = {
-  en: {
-    tab_plan: "Plan", tab_calendar: "Calendar", tab_setup: "Setup",
-    composer: "What do you want to learn?",
-    plan_empty_h: "Your plan takes shape here",
-    plan_empty_p: "Tell start.ai what you want to learn and answer a few questions. A scheduled roadmap appears — phase by phase, with a finish date it keeps honest.",
-    cal_empty_h: "Nothing scheduled yet",
-    cal_empty_p: "Open your plan and choose Schedule it to place each task on a real date.",
-    setup_empty_h: "Setup guidance arrives with your plan",
-    setup_empty_p: "You'll see what to get — ordered by impact for your budget, with a free path first.",
-    btn_schedule: "Schedule it", btn_confirm: "Confirm week", btn_export: "Export .ics",
-    btn_missed: "Simulate a missed day", demo: "demo",
-    your_plan: "Your plan", roadmap: "Roadmap", tasks: "Tasks", target_finish: "Target finish",
-    finish_set: "set when you schedule", weeks_approx: "~{n} weeks",
-    moved_from: "moved from {d}", originally: "originally {d}",
-    meter_connecting: "connecting…", meter_mock: "mock mode · $0", meter_live: "live · {n} calls · ${c}",
-    rollover_asof: "As of {date} —", rolled_fwd: "{n} session(s) rolled forward.",
-    finish_moved: "Finish moved {old} → {new} (+{d} days).",
-    nothing_roll: "nothing to roll forward. You're on track.",
-    err_backend: "Can't reach the backend ({e}). Start it, then reload this page.",
-    err_generic: "Something went wrong: {e}. Try again.",
-    starters: ["IELTS 7.0 by October", "Learn guitar", "Get into data analytics", "I want to be a gamer"],
-    min: "min",
-    freq: { once: "once", weekly: "weekly", twice_weekly: "twice weekly", thrice_weekly: "3× weekly", daily: "daily" },
-    status: { proposed: "proposed", scheduled: "scheduled", done: "done", rolled_over: "rolled" },
-    prio: { high: "high", medium: "medium", low: "low" },
-  },
-  ru: {
-    tab_plan: "План", tab_calendar: "Календарь", tab_setup: "Набор",
-    composer: "Что вы хотите освоить?",
-    plan_empty_h: "Здесь появится ваш план",
-    plan_empty_p: "Скажите start.ai, что хотите освоить, и ответьте на пару вопросов. Появится план с расписанием — этап за этапом, с честной датой финиша.",
-    cal_empty_h: "Пока ничего не запланировано",
-    cal_empty_p: "Откройте план и нажмите «Запланировать», чтобы разложить задачи по датам.",
-    setup_empty_h: "Рекомендации по набору появятся вместе с планом",
-    setup_empty_p: "Вы увидите, что взять — по влиянию на результат в рамках бюджета, начиная с бесплатного варианта.",
-    btn_schedule: "Запланировать", btn_confirm: "Подтвердить неделю", btn_export: "Экспорт .ics",
-    btn_missed: "Смоделировать пропуск", demo: "демо",
-    your_plan: "Ваш план", roadmap: "Дорожная карта", tasks: "Задачи", target_finish: "Целевой финиш",
-    finish_set: "появится при планировании", weeks_approx: "~{n} нед.",
-    moved_from: "сдвинуто с {d}", originally: "изначально {d}",
-    meter_connecting: "подключение…", meter_mock: "демо-режим · $0", meter_live: "онлайн · {n} запр. · ${c}",
-    rollover_asof: "На {date} —", rolled_fwd: "перенесено занятий: {n}.",
-    finish_moved: "Финиш сдвинут {old} → {new} (+{d} дн.).",
-    nothing_roll: "переносить нечего. Вы идёте по плану.",
-    err_backend: "Не удаётся связаться с сервером ({e}). Запустите его и перезагрузите страницу.",
-    err_generic: "Что-то пошло не так: {e}. Попробуйте снова.",
-    starters: ["IELTS 7.0 к октябрю", "Научиться играть на гитаре", "Освоить аналитику данных", "Хочу стать геймером"],
-    min: "мин",
-    freq: { once: "разово", weekly: "еженедельно", twice_weekly: "2×/неделю", thrice_weekly: "3×/неделю", daily: "ежедневно" },
-    status: { proposed: "предложено", scheduled: "в плане", done: "готово", rolled_over: "перенесено" },
-    prio: { high: "важно", medium: "средне", low: "низко" },
-  },
-  uz: {
-    tab_plan: "Reja", tab_calendar: "Kalendar", tab_setup: "Jihoz",
-    composer: "Nimani o'rganmoqchisiz?",
-    plan_empty_h: "Rejangiz shu yerda shakllanadi",
-    plan_empty_p: "start.ai ga nimani o'rganmoqchi ekaningizni ayting va bir necha savolga javob bering. Jadvalli yo'l xaritasi paydo bo'ladi — bosqichma-bosqich, halol tugash sanasi bilan.",
-    cal_empty_h: "Hali hech narsa rejalashtirilmagan",
-    cal_empty_p: "Rejangizni oching va har bir vazifani real sanaga qo'yish uchun «Rejaga qo'yish» ni tanlang.",
-    setup_empty_h: "Jihoz bo'yicha tavsiyalar reja bilan keladi",
-    setup_empty_p: "Nima olish kerakligini ko'rasiz — byudjetingizga ta'siri bo'yicha, avval bepul yo'l bilan.",
-    btn_schedule: "Rejaga qo'yish", btn_confirm: "Haftani tasdiqlash", btn_export: ".ics eksport",
-    btn_missed: "O'tkazilgan kunni sinash", demo: "demo",
-    your_plan: "Sizning rejangiz", roadmap: "Yo'l xaritasi", tasks: "Vazifalar", target_finish: "Maqsadli tugash",
-    finish_set: "rejalashtirilganda belgilanadi", weeks_approx: "~{n} hafta",
-    moved_from: "{d} dan surildi", originally: "dastlab {d}",
-    meter_connecting: "ulanmoqda…", meter_mock: "demo rejim · $0", meter_live: "jonli · {n} so'rov · ${c}",
-    rollover_asof: "{date} holatida —", rolled_fwd: "{n} ta mashg'ulot keyinga surildi.",
-    finish_moved: "Tugash {old} → {new} (+{d} kun) ga o'zgardi.",
-    nothing_roll: "surish uchun hech narsa yo'q. Rejadasiz.",
-    err_backend: "Backend bilan bog'lanib bo'lmadi ({e}). Uni ishga tushiring va sahifani yangilang.",
-    err_generic: "Xatolik yuz berdi: {e}. Qayta urinib ko'ring.",
-    starters: ["Oktyabrga IELTS 7.0", "Gitara o'rganish", "Data tahlilini o'rganish", "Geymer bo'lmoqchiman"],
-    min: "daq",
-    freq: { once: "bir marta", weekly: "haftada", twice_weekly: "haftada 2×", thrice_weekly: "haftada 3×", daily: "har kuni" },
-    status: { proposed: "taklif", scheduled: "rejada", done: "bajarildi", rolled_over: "surildi" },
-    prio: { high: "yuqori", medium: "o'rta", low: "past" },
-  },
+const state = {
+  userId: null, sessionId: null, token: null, timezone: null, planId: null, plan: null,
+  started: false, events: [], weekStart: null, scheduled: false,
 };
-
-function t(key) {
-  const d = I18N[LANG] || I18N.en;
-  return d[key] != null ? d[key] : (I18N.en[key] != null ? I18N.en[key] : key);
-}
-function tg(group, code) {
-  const g = (I18N[LANG] || I18N.en)[group] || {};
-  return g[code] != null ? g[code] : ((I18N.en[group] || {})[code] || code);
-}
-function fmt(tpl, map) {
-  return String(tpl).replace(/\{(\w+)\}/g, (_, k) => (map[k] != null ? map[k] : ""));
-}
 
 function applyI18n() {
   document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+  // Controls that show only an icon carry their label in the current language.
+  document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
   document.documentElement.lang = LANG;
+  syncThemeButton();
+  syncComposer();
+  syncGreeting();
+  syncDock();
+  syncDemoBadge();
+  syncSettings();   // no-op while the dialog is closed
+}
+
+// The opening question uses your name when it knows it.
+function syncGreeting() {
+  const h = document.querySelector("#intakeHead h1");
+  if (!h) return;
+  const name = lsGet("startai_name");
+  h.textContent = name ? fmt(t("intake_h_named"), { name }) : t("intake_h");
+}
+
+// The composer asks for a goal during intake, and for questions afterwards.
+function syncComposer() {
+  const input = $("input");
+  if (input) input.placeholder = t(document.body.dataset.stage === "plan" ? "composer_plan" : "composer");
 }
 
 function setLang(lang) {
   LANG = lang;
-  localStorage.setItem("startai_lang", lang);
-  document.querySelectorAll("#langSwitch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === lang));
+  lsSet("startai_lang", lang);
+  syncLangButtons();
   applyI18n();
+  syncAccount();
   if (!state.started) setChips(t("starters"));
   refreshMeter();
   if (state.plan) {
+    renderGoalBand(state.plan);
     renderPlan(state.plan);
-    renderSetup(state.plan.setupItems || []);
-    loadCalendar();
+    renderKit(state.plan.setupItems || [], state.plan.budget);
+    renderWeek();
   }
 }
 
 // ── theme ──
+// The stored preference is light, dark, or system; "system" keeps following
+// the OS after the choice is made, instead of freezing at whatever it was.
+function themePref() { return lsGet("startai_theme") || "system"; }
+function applyTheme(pref) {
+  lsSet("startai_theme", pref);
+  const dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  syncThemeButton();
+  syncSettings();
+}
 function toggleTheme() {
-  const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", next);
-  localStorage.setItem("startai_theme", next);
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+}
+
+// A toggle should say which state it is in, not only look like it.
+function syncThemeButton() {
+  const b = $("themeToggle");
+  if (!b) return;
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  b.setAttribute("aria-pressed", String(dark));
+  b.setAttribute("aria-label", t(dark ? "aria_theme_light" : "aria_theme_dark"));
+}
+function syncLangButtons() {
+  document.querySelectorAll("#langSwitch button").forEach((b) => {
+    const on = b.dataset.lang === LANG;
+    b.classList.toggle("active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
 }
 
 // ── DOM helpers ──
@@ -134,475 +95,182 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": 
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
 const WARN_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
-
-const DEMO_DB = {
-  plans: {},
-  calendars: {},
-  session: { userId: "demo-user", sessionId: "demo-session" },
-  intake: null,
-};
+// Drawn on the same 24-unit stroke grid as every other icon here.
+const FLAG_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V4M6 4h11l-2.2 3.5L17 11H6"/></svg>';
+const DOTS_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>';
 
 function uid(prefix) {
   return prefix + "-" + Math.random().toString(36).slice(2, 10);
 }
+// ── Timezone ──
+// Scheduling happens in the plan's timezone, which the backend owns. The
+// browser's zone is only a fallback for when nothing has said otherwise.
+function browserTimezone() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (_) { return "UTC"; }
+}
+function planTimezone() {
+  return (state.plan && state.plan.timezone) || state.timezone || browserTimezone();
+}
+// The calendar date a given instant falls on, in a named zone.
+function isoInZone(date, tz) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(date);
+    const get = (k) => (parts.find((p) => p.type === k) || {}).value;
+    const y = get("year"); const m = get("month"); const d = get("day");
+    if (y && m && d) return `${y}-${m}-${d}`;
+  } catch (_) { /* unknown zone: fall through to the device */ }
+  const d2 = date;
+  return d2.getFullYear() + "-" + String(d2.getMonth() + 1).padStart(2, "0") + "-" + String(d2.getDate()).padStart(2, "0");
+}
 function isoToday() {
-  return new Date().toISOString().slice(0, 10);
+  return isoInZone(new Date(), planTimezone());
 }
 function lower(s) {
   return String(s || "").toLowerCase();
 }
-function inferSkill(msg) {
-  const m = lower(msg);
-  if (m.includes("ielts")) return "IELTS 7.0";
-  if (m.includes("guitar") || m.includes("gitara")) return "Guitar";
-  if (m.includes("data") || m.includes("analit")) return "Data analytics";
-  if (m.includes("gamer") || m.includes("geymer")) return "Gaming";
-  return msg || "New skill";
-}
-function intakeText(kind) {
-  const dict = {
-    en: {
-      askLevel: "Great goal. What is your current level?",
-      askTime: "How much time can you invest per day?",
-      askDeadline: "Choose your target timeline:",
-      done: "Perfect. I adapted a real-world study roadmap to your level, daily time, and deadline.",
-      level: ["Beginner", "Intermediate", "Advanced"],
-      time: ["30 min/day", "60 min/day", "90 min/day"],
-      deadline: ["2 months", "3 months", "6 months"],
-    },
-    ru: {
-      askLevel: "Отличная цель. Какой у вас текущий уровень?",
-      askTime: "Сколько времени в день вы готовы уделять?",
-      askDeadline: "Выберите желаемый срок:",
-      done: "Отлично. Я адаптировал реальный учебный план под ваш уровень, время и срок.",
-      level: ["Начальный", "Средний", "Продвинутый"],
-      time: ["30 мин/день", "60 мин/день", "90 мин/день"],
-      deadline: ["2 месяца", "3 месяца", "6 месяцев"],
-    },
-    uz: {
-      askLevel: "Zo'r maqsad. Hozirgi darajangiz qanday?",
-      askTime: "Kuniga qancha vaqt ajrata olasiz?",
-      askDeadline: "Maqsad muddatini tanlang:",
-      done: "Ajoyib. Haqiqiy o'quv yo'l xaritasini daraja, vaqt va muddatingizga mosladim.",
-      level: ["Boshlang'ich", "O'rta", "Yuqori"],
-      time: ["30 daqiqa/kun", "60 daqiqa/kun", "90 daqiqa/kun"],
-      deadline: ["2 oy", "3 oy", "6 oy"],
-    },
-  };
-  const d = dict[LANG] || dict.en;
-  if (kind === "level") return d.level;
-  if (kind === "time") return d.time;
-  if (kind === "deadline") return d.deadline;
-  return d;
-}
-function parseLevel(msg) {
-  const m = lower(msg);
-  if (m.includes("begin") || m.includes("boshl") || m.includes("нач")) return "beginner";
-  if (m.includes("inter") || m.includes("o'rta") || m.includes("сред")) return "intermediate";
-  if (m.includes("adv") || m.includes("yuqori") || m.includes("прод")) return "advanced";
-  return "beginner";
-}
-function parseDailyMinutes(msg) {
-  const m = lower(msg);
-  if (m.includes("90")) return 90;
-  if (m.includes("60")) return 60;
-  return 30;
-}
-function parseMonths(msg) {
-  const m = lower(msg);
-  if (m.includes("6")) return 6;
-  if (m.includes("3")) return 3;
-  return 2;
-}
-function skillKey(skill) {
-  if (skill === "IELTS 7.0") return "ielts";
-  if (skill === "Guitar") return "guitar";
-  if (skill === "Data analytics") return "data";
-  if (skill === "Gaming") return "gaming";
-  return "generic";
+// ── Errors ─────────────────────────────────────────────────────────────
+// The client understands stable codes, not prose. Server text is shown only
+// when it arrives in the agreed {error:{code,message}} shape AND survives the
+// guard below — never a raw body, HTML page, stack trace or provider payload.
+const ERR_TEXT = {
+  NETWORK: "err_network",
+  AI_UNAVAILABLE: "err_ai_unavailable",
+  RATE_LIMITED: "err_rate_limited",
+  UNAUTHORIZED: "err_unauthorized",
+  FORBIDDEN: "err_unauthorized",
+  NOT_FOUND: "err_not_found",
+  INVALID_INPUT: "err_invalid",
+  SERVER_ERROR: "err_server",
+};
+
+function apiErr(code, safeMessage, status) {
+  const e = new Error(code);
+  e.code = code;
+  if (safeMessage) e.safeMessage = safeMessage;
+  if (status) e.status = status;
+  return e;
 }
 
-// Real-world roadmaps adapted from public study plans (IELTS, guitar, analytics, FPS training).
-function skillBlueprint(skill, level, dailyMin, months) {
-  const weeksTotal = Math.max(8, months * 4);
-  const w1 = Math.max(2, Math.floor(weeksTotal * 0.25));
-  const w2 = Math.max(w1 + 2, Math.floor(weeksTotal * 0.65));
-  const vocab = {
-    ielts: {
-      path: "Academic IELTS Band 7 track",
-      assessment: level === "beginner"
-        ? "From beginner English, Band 7 needs language building first, then exam strategy — not mock tests on day one."
-        : level === "intermediate"
-          ? "You already have usable English; this plan shifts early into IELTS formats and weak-skill drills."
-          : "Advanced base: accelerate into timed mocks, writing feedback loops, and speaking fluency polish.",
-      feasibility: months < 3 && level === "beginner"
-        ? "Band 7 in under 3 months from beginner is aggressive; expect foundation + strategy compression."
-        : "Typical Band 7 paths use ~200–300 focused hours across Listening, Reading, Writing, Speaking.",
-      phases: [
-        { key: "foundation", title: "General English foundation", weekStart: 1, weekEnd: w1, summary: "Grammar (tenses, articles, complex sentences), academic vocabulary, and daily speaking/listening input." },
-        { key: "practice", title: "IELTS skill development", weekStart: w1 + 1, weekEnd: w2, summary: "Learn all question types; drill Reading skimming/scanning, Writing Task 1/2 structure, Speaking Parts 1–3." },
-        { key: "performance", title: "Mock exams & polish", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Full timed mocks, error logs, weakest-module overtime, and exam-day stamina." },
-      ],
-      milestones: [
-        { phase: "foundation", title: "Diagnostic mock + baseline band" },
-        { phase: "practice", title: "First section targets (L/R ≈ 6.5 practice)" },
-        { phase: "performance", title: "Full mock under exam conditions" },
-      ],
-      todos: [
-        { title: "Vocabulary + grammar block", priority: "high", durationMin: Math.min(dailyMin, 25), frequency: "daily", phase: "foundation" },
-        { title: "Listening or Reading timed drill", priority: "high", durationMin: Math.max(20, Math.floor(dailyMin * 0.5)), frequency: "daily", phase: "practice" },
-        { title: "Writing Task 1 or Task 2", priority: "high", durationMin: 40, frequency: "twice_weekly", phase: "practice" },
-        { title: "Speaking practice (record + review)", priority: "medium", durationMin: 15, frequency: "daily", phase: "foundation" },
-        { title: "Full IELTS mock + error analysis", priority: "high", durationMin: 180, frequency: "weekly", phase: "performance" },
-      ],
-      setup: [
-        { name: "Cambridge IELTS practice books / free mocks", priceRange: "$0-40", category: "practice", rationale: "Official-style papers for timed Listening/Reading/Writing." },
-        { name: "Anki or Quizlet (academic word lists)", priceRange: "$0", category: "vocab", rationale: "Daily spaced-repetition vocabulary for Band 7 writing/speaking." },
-        { name: "Voice recorder (phone)", priceRange: "$0", category: "speaking", rationale: "Self-review fluency, pronunciation, and Part 2 timing." },
-      ],
-    },
-    guitar: {
-      path: "Open chords → songs track",
-      assessment: level === "beginner"
-        ? "Beginner path: posture, open chords (Em, Am, G, C, D), slow transitions, then first full songs."
-        : level === "intermediate"
-          ? "Intermediate path: faster changes, barre chords, metronome rhythm, and 3–4 performance-ready songs."
-          : "Advanced path: barre fluency, riffs/power chords, dynamics, and clean recorded takes.",
-      feasibility: "Short daily practice (20–40+ min) beats long rare sessions; first recognizable songs usually land in 4–12 weeks.",
-      phases: [
-        { key: "foundation", title: "Setup & open chords", weekStart: 1, weekEnd: w1, summary: "Hold/tune, fretting, open chords Em/Am/G/C/D, and pain-free short sessions." },
-        { key: "practice", title: "Transitions & strumming", weekStart: w1 + 1, weekEnd: w2, summary: "Slow chord changes, basic strum patterns with a metronome, 2–3 chord songs." },
-        { key: "performance", title: "Songs & confidence", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Full songs start-to-finish, speed up changes, optional barre/riffs, record yourself." },
-      ],
-      milestones: [
-        { phase: "foundation", title: "Clean Em + Am + one 2-chord loop" },
-        { phase: "practice", title: "Play a 3-chord song with steady strum" },
-        { phase: "performance", title: "Perform/record one full song" },
-      ],
-      todos: [
-        { title: "Warm-up fretting / finger drills", priority: "medium", durationMin: 5, frequency: "daily", phase: "foundation" },
-        { title: "Open chord practice (clean frets)", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.4)), frequency: "daily", phase: "foundation" },
-        { title: "Chord transition drills (metronome)", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.35)), frequency: "daily", phase: "practice" },
-        { title: "Strumming pattern + song practice", priority: "high", durationMin: Math.max(10, Math.floor(dailyMin * 0.35)), frequency: "daily", phase: "practice" },
-        { title: "Record one song take & review", priority: "medium", durationMin: 30, frequency: "weekly", phase: "performance" },
-      ],
-      setup: [
-        { name: "Acoustic or electric starter guitar", priceRange: "$50-200", category: "instrument", rationale: "Playable action matters more than brand for beginners." },
-        { name: "Clip-on tuner + picks", priceRange: "$0-15", category: "gear", rationale: "In-tune practice builds ear and clean chords faster." },
-        { name: "JustinGuitar / free YouTube beginner course", priceRange: "$0", category: "lessons", rationale: "Structured stages: chords → strumming → songs." },
-      ],
-    },
-    data: {
-      path: "Excel → SQL → Python/BI portfolio",
-      assessment: level === "beginner"
-        ? "Start with Excel/Sheets and stats, then SQL, then Python/Pandas or Power BI — projects last."
-        : level === "intermediate"
-          ? "Skip basics: deepen SQL joins/windows, Pandas EDA, and one BI dashboard project early."
-          : "Advanced: portfolio polish — window functions, end-to-end pipelines, and interview-style cases.",
-      feasibility: "Job-ready analytics roadmaps commonly use 8–12 weeks of daily practice plus 2–3 portfolio projects.",
-      phases: [
-        { key: "foundation", title: "Excel & analytics basics", weekStart: 1, weekEnd: w1, summary: "Pivot tables, VLOOKUP/XLOOKUP, charts, cleaning, and core stats (mean, distribution, correlation)." },
-        { key: "practice", title: "SQL + Python/BI tools", weekStart: w1 + 1, weekEnd: w2, summary: "SELECT/JOINs/GROUP BY, then Pandas cleaning/viz or Power BI models and dashboards." },
-        { key: "performance", title: "Portfolio & interview cases", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Ship 2–3 end-to-end projects on GitHub/LinkedIn; timed SQL drills and case write-ups." },
-      ],
-      milestones: [
-        { phase: "foundation", title: "Sales dashboard in Excel/Sheets" },
-        { phase: "practice", title: "Multi-table SQL analysis + first Python/BI report" },
-        { phase: "performance", title: "3 portfolio projects published" },
-      ],
-      todos: [
-        { title: "Excel/Sheets drills (pivots, lookups)", priority: "high", durationMin: Math.min(dailyMin, 40), frequency: "daily", phase: "foundation" },
-        { title: "SQL practice set (JOINs, aggregates)", priority: "high", durationMin: Math.max(25, Math.floor(dailyMin * 0.6)), frequency: "daily", phase: "practice" },
-        { title: "Python Pandas / Power BI lab", priority: "high", durationMin: Math.max(30, Math.floor(dailyMin * 0.7)), frequency: "thrice_weekly", phase: "practice" },
-        { title: "Portfolio project work block", priority: "high", durationMin: Math.max(45, dailyMin), frequency: "twice_weekly", phase: "performance" },
-        { title: "SQL interview questions review", priority: "medium", durationMin: 30, frequency: "weekly", phase: "performance" },
-      ],
-      setup: [
-        { name: "Google Sheets or Excel", priceRange: "$0-10", category: "tools", rationale: "Fastest path to business-style analysis and dashboards." },
-        { name: "SQLite / Mode / free SQL playground", priceRange: "$0", category: "sql", rationale: "Practice JOINs and aggregates on real-ish tables." },
-        { name: "Kaggle datasets + GitHub", priceRange: "$0", category: "portfolio", rationale: "Public datasets and a repo to showcase end-to-end work." },
-      ],
-    },
-    gaming: {
-      path: "Aim + gamesense competitive track",
-      assessment: level === "beginner"
-        ? "Lock sensitivity, short aim warm-ups, crosshair placement, then deathmatch — not endless ranked grind."
-        : level === "intermediate"
-          ? "Structured aim blocks + VOD review of deaths; one focus mechanic per session."
-          : "Advanced: tracking/flicks/micro-adjustments, map roles, and weekly VOD coaching loops.",
-      feasibility: "15–20 min deliberate aim training daily plus focused in-game practice beats hours of unfocused ranked.",
-      phases: [
-        { key: "foundation", title: "Setup & fundamentals", weekStart: 1, weekEnd: w1, summary: "Lock DPI/sens for 30 days, ergonomics, crosshair at head height, basic movement/counter-strafe." },
-        { key: "practice", title: "Aim drills + applied DM", weekStart: w1 + 1, weekEnd: w2, summary: "Aimlabs/KovaaK warm-up (tracking/flicks), range routines, then deathmatch applying one focus skill." },
-        { key: "performance", title: "Ranked + VOD review", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Ranked with one focus per session; review deaths for positioning/decision mistakes weekly." },
-      ],
-      milestones: [
-        { phase: "foundation", title: "Sens locked + 7-day warm-up streak" },
-        { phase: "practice", title: "Measurable aim-trainer score uplift" },
-        { phase: "performance", title: "VOD review habit + ranked focus sessions" },
-      ],
-      todos: [
-        { title: "Aim trainer warm-up (same routine)", priority: "high", durationMin: Math.min(20, dailyMin), frequency: "daily", phase: "foundation" },
-        { title: "Crosshair placement / range drill", priority: "high", durationMin: 15, frequency: "daily", phase: "practice" },
-        { title: "Deathmatch — one focus mechanic", priority: "high", durationMin: Math.max(20, dailyMin - 20), frequency: "daily", phase: "practice" },
-        { title: "Ranked session (deliberate focus)", priority: "medium", durationMin: Math.max(45, dailyMin), frequency: "thrice_weekly", phase: "performance" },
-        { title: "VOD review 2–3 deaths", priority: "high", durationMin: 20, frequency: "weekly", phase: "performance" },
-      ],
-      setup: [
-        { name: "Aimlabs (free) or KovaaK’s", priceRange: "$0-10", category: "training", rationale: "Repeatable aim scenarios to track accuracy over weeks." },
-        { name: "Stable mouse + large pad", priceRange: "$20-60", category: "gear", rationale: "Consistent sens and space for controlled aim." },
-        { name: "144Hz+ monitor (if possible)", priceRange: "$0-150", category: "display", rationale: "Clearer motion helps tracking; optional if already set up." },
-      ],
-    },
-    generic: {
-      path: "Custom skill track",
-      assessment: `Custom plan for ${skill}: fundamentals → deliberate practice → measurable performance.`,
-      feasibility: `Adapted to ${level} level, ${dailyMin} min/day, ~${months} month horizon.`,
-      phases: [
-        { key: "foundation", title: "Foundation", weekStart: 1, weekEnd: w1, summary: "Core concepts, tools setup, and a sustainable daily habit." },
-        { key: "practice", title: "Deliberate practice", weekStart: w1 + 1, weekEnd: w2, summary: "Skill drills with feedback; increase difficulty weekly." },
-        { key: "performance", title: "Performance outcomes", weekStart: w2 + 1, weekEnd: weeksTotal, summary: "Projects, mocks, or public practice that prove progress." },
-      ],
-      milestones: [
-        { phase: "foundation", title: "Baseline skill check" },
-        { phase: "practice", title: "Midpoint progress review" },
-        { phase: "performance", title: "Final demonstration" },
-      ],
-      todos: [
-        { title: `${dailyMin}-minute focused practice`, priority: "high", durationMin: dailyMin, frequency: "daily", phase: "foundation" },
-        { title: "Weekly skill challenge", priority: "high", durationMin: 45, frequency: "weekly", phase: "practice" },
-        { title: "Progress review & next-week plan", priority: "medium", durationMin: 20, frequency: "weekly", phase: "performance" },
-      ],
-      setup: [
-        { name: "Notes app", priceRange: "$0", category: "workflow", rationale: "Log drills and weekly retrospectives." },
-        { name: "Timer", priceRange: "$0", category: "focus", rationale: "Protect deep-work blocks." },
-        { name: "One trusted course or book", priceRange: "$0-40", category: "content", rationale: "Avoid random tutorial hopping." },
-      ],
-    },
-  };
-  const bp = vocab[skillKey(skill)] || vocab.generic;
-  return { weeksTotal, ...bp };
+// A message is only forwarded to the user if it reads like one sentence of
+// product copy. Markup, JSON, keys, tokens and provider/billing talk are out.
+function isSafeMessage(s) {
+  if (typeof s !== "string") return false;
+  const v = s.trim();
+  if (!v || v.length > 200 || v.split("\n").length > 2) return false;
+  if (/[<>{}[\]]/.test(v)) return false;
+  if (/\b(sk-[A-Za-z0-9]|bearer\s|eyJ[A-Za-z0-9_-]{6})/i.test(v)) return false;
+  if (/\b(openai|anthropic|api[ _-]?key|token|quota|credit balance|billing|stack trace|goroutine|panic:)\b/i.test(v)) return false;
+  if (/\bat\s+[\w.$]+\s*\(/.test(v)) return false;
+  return true;
 }
 
-function planForMessage(message, profile = {}) {
-  const skill = inferSkill(message);
-  const planId = uid("plan");
-  const base = isoToday();
-  const level = profile.level || "beginner";
-  const dailyMin = profile.dailyMin || 30;
-  const months = profile.deadlineMonths || 3;
-  const bp = skillBlueprint(skill, level, dailyMin, months);
-  const weeksTotal = bp.weeksTotal;
-
-  const phases = bp.phases;
-  const milestones = bp.milestones.map((m, i) => ({
-    ...m,
-    targetDate: addDays(base, i === 0 ? 10 : (i === 1 ? Math.floor((weeksTotal * 7) / 2) : weeksTotal * 7 - 7)),
-  }));
-  const todos = bp.todos.map((td) => ({
-    id: uid("todo"),
-    title: td.title,
-    priority: td.priority,
-    durationMin: td.durationMin,
-    frequency: td.frequency,
-    phase: td.phase,
-    status: "proposed",
-  }));
-  const setupItems = bp.setup;
-
-  const plan = {
-    id: planId,
-    skill,
-    path: `${bp.path} · ${level} · ${dailyMin}m/day`,
-    assessment: bp.assessment,
-    feasibility: bp.feasibility,
-    phases,
-    milestones,
-    todos,
-    setupItems,
-    weeksTotal,
-    startDate: null,
-    finishDate: null,
-    originalFinishDate: null,
-  };
-  DEMO_DB.plans[planId] = plan;
-  DEMO_DB.calendars[planId] = [];
-  return plan;
-}
-function scheduleForPlan(plan) {
-  const start = addDays(isoToday(), 1);
-  const totalWeeks = plan.weeksTotal || 10;
-  const todos = plan.todos || [];
-  const events = [];
-  const daily = todos.filter((td) => td.frequency === "daily");
-  const weekly = todos.filter((td) => td.frequency === "weekly" || td.frequency === "twice_weekly" || td.frequency === "thrice_weekly");
-
-  for (let i = 0; i < 7; i += 1) {
-    const day = addDays(start, i);
-    daily.forEach((td, idx) => {
-      const hour = 18 + idx;
-      events.push({
-        date: day,
-        startTime: String(Math.min(hour, 21)).padStart(2, "0") + ":00",
-        title: td.title,
-        status: i < 1 && idx === 0 ? "done" : "scheduled",
-      });
-    });
-  }
-  weekly.forEach((td, idx) => {
-    events.push({
-      date: addDays(start, Math.min(6, 1 + idx * 2)),
-      startTime: "10:00",
-      title: td.title,
-      status: "scheduled",
-    });
-  });
-  if (!events.length && todos.length) {
-    events.push({ date: start, startTime: "19:00", title: todos[0].title, status: "scheduled" });
-  }
-
-  DEMO_DB.calendars[plan.id] = events;
-  plan.startDate = start;
-  plan.finishDate = addDays(start, totalWeeks * 7);
-  if (!plan.originalFinishDate) plan.originalFinishDate = plan.finishDate;
-  return { startDate: plan.startDate, finishDate: plan.finishDate };
-}
-function parseBody(opts) {
-  if (!opts || !opts.body) return {};
-  try { return JSON.parse(opts.body); } catch (_) { return {}; }
-}
-async function mockApi(path, opts = {}) {
-  const body = parseBody(opts);
-
-  if (path === "/api/session" && (opts.method || "GET") === "POST") {
-    return {
-      userId: DEMO_DB.session.userId,
-      sessionId: DEMO_DB.session.sessionId,
-      assistant: "Demo mode is on. Pick a suggested skill or type your own goal. I will ask about your condition before building the plan.",
-    };
-  }
-
-  if (path === "/api/chat" && (opts.method || "GET") === "POST") {
-    const msg = String(body.message || "").trim();
-    if (!DEMO_DB.intake) {
-      DEMO_DB.intake = { goal: msg, step: "level" };
-      return {
-        assistant: intakeText().askLevel,
-        options: intakeText("level"),
-        stage: "intake_level",
-      };
+async function readError(res) {
+  const byStatus = { 400: "INVALID_INPUT", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 429: "RATE_LIMITED" };
+  let code = byStatus[res.status] || (res.status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED");
+  let safe = null;
+  try {
+    const body = await res.json();
+    const err = body && body.error;
+    if (err && typeof err === "object") {
+      if (typeof err.code === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(err.code)) code = err.code;
+      if (isSafeMessage(err.message)) safe = err.message.trim();
     }
-    if (DEMO_DB.intake.step === "level") {
-      DEMO_DB.intake.level = parseLevel(msg);
-      DEMO_DB.intake.step = "time";
-      return {
-        assistant: intakeText().askTime,
-        options: intakeText("time"),
-        stage: "intake_time",
-      };
-    }
-    if (DEMO_DB.intake.step === "time") {
-      DEMO_DB.intake.dailyMin = parseDailyMinutes(msg);
-      DEMO_DB.intake.step = "deadline";
-      return {
-        assistant: intakeText().askDeadline,
-        options: intakeText("deadline"),
-        stage: "intake_deadline",
-      };
-    }
-    const months = parseMonths(msg);
-    const plan = planForMessage(DEMO_DB.intake.goal, {
-      level: DEMO_DB.intake.level,
-      dailyMin: DEMO_DB.intake.dailyMin,
-      deadlineMonths: months,
-    });
-    DEMO_DB.intake = null;
-    return {
-      assistant: `${intakeText().done} Open the Plan tab to review it.`,
-      options: [],
-      planId: plan.id,
-      stage: "planning",
-    };
-  }
+  } catch (_) { /* non-JSON body (HTML page, empty, truncated): discarded on purpose */ }
+  return apiErr(code, safe, res.status);
+}
 
-  if (path.indexOf("/api/plan/") === 0 && (opts.method || "GET") === "GET") {
-    const planId = path.split("/api/plan/")[1];
-    const plan = DEMO_DB.plans[planId];
-    if (!plan) throw new Error("Plan not found");
-    return JSON.parse(JSON.stringify(plan));
-  }
-
-  if (path === "/api/todo/complete" && (opts.method || "GET") === "POST") {
-    const plan = DEMO_DB.plans[body.planId];
-    if (!plan) throw new Error("Plan not found");
-    plan.todos = (plan.todos || []).map((td) => (td.id === body.todoId ? { ...td, status: "done" } : td));
-    return { ok: true };
-  }
-
-  if (path === "/api/schedule" && (opts.method || "GET") === "POST") {
-    const plan = DEMO_DB.plans[body.planId];
-    if (!plan) throw new Error("Plan not found");
-    return scheduleForPlan(plan);
-  }
-
-  if (path === "/api/schedule/confirm" && (opts.method || "GET") === "POST") {
-    return { ok: true };
-  }
-
-  if (path.indexOf("/api/calendar") === 0 && (opts.method || "GET") === "GET") {
-    const query = path.split("?")[1] || "";
-    const qp = new URLSearchParams(query);
-    const planId = qp.get("planId") || "";
-    return DEMO_DB.calendars[planId] || [];
-  }
-
-  if (path === "/api/rollover" && (opts.method || "GET") === "POST") {
-    const planIds = Object.keys(DEMO_DB.plans);
-    if (!planIds.length) return { asOf: body.asOf, results: [] };
-    const pid = planIds[0];
-    const cal = DEMO_DB.calendars[pid] || [];
-    const moved = cal.filter((ev) => ev.status === "scheduled").slice(0, 1);
-    moved.forEach((ev) => {
-      ev.status = "rolled_over";
-      cal.push({ ...ev, date: addDays(ev.date, 1), status: "scheduled" });
-    });
-    const p = DEMO_DB.plans[pid];
-    const oldFinish = p.finishDate;
-    if (oldFinish) p.finishDate = addDays(oldFinish, moved.length ? 1 : 0);
-    return {
-      asOf: body.asOf,
-      results: [{ moved: moved.length, finishShiftDays: moved.length ? 1 : 0, oldFinish, newFinish: p.finishDate }],
-    };
-  }
-
-  if (path === "/api/meter" && (opts.method || "GET") === "GET") {
-    return { enabled: false, callsTotal: 0, costUsd: 0 };
-  }
-
-  throw new Error("Demo endpoint not implemented: " + path);
+// What the user actually reads. Localized copy wins over server prose so the
+// UI stays translated; server prose is the fallback for codes we don't know.
+function errText(e) {
+  const key = e && e.code && ERR_TEXT[e.code];
+  if (key) return t(key);
+  if (e && e.safeMessage) return e.safeMessage;
+  return t("err_generic_safe");
 }
 
 async function api(path, opts = {}) {
   if (DEMO_MODE) return mockApi(path, opts);
   const headers = { "Content-Type": "application/json" };
+  // The backend issues a session token and rejects everything else with 401.
+  if (state.token) headers.Authorization = "Bearer " + state.token;
   if (state.userId) headers["X-User-Id"] = state.userId;
-  const res = await fetch(API + path, { headers, ...opts });
-  if (!res.ok) {
-    let msg = res.statusText;
-    try { msg = (await res.json()).error || msg; } catch (_) {}
-    throw new Error(msg);
+  let res;
+  try {
+    res = await fetch(API + path, { headers, ...opts });
+  } catch (_) {
+    // A live request that fails stays failed. It never falls back to the mock.
+    throw apiErr("NETWORK");
   }
-  return res.json();
+  if (!res.ok) throw await readError(res);
+  try {
+    return await res.json();
+  } catch (_) {
+    throw apiErr("BAD_RESPONSE");
+  }
+}
+
+// ── Stage ──
+// Two stages, one surface. During intake the conversation owns a centred
+// column; once a plan exists it collapses to a dock and the plan takes over.
+function setStage(name) {
+  document.body.dataset.stage = name;
+  syncComposer();
+  syncDock();
+  $("intakeHead").hidden = name !== "intake";
+  $("goalBand").hidden = name !== "plan";
+  $("surface").hidden = name !== "plan";
+  $("dockToggle").hidden = name !== "plan";
+  $("planState").hidden = name !== "plan";
+}
+function setDock(open) {
+  document.body.classList.toggle("dock-closed", !open);
+  $("dockToggle").setAttribute("aria-expanded", String(open));
+  syncDock();
+  if (open) { scrollChat(); $("input").focus(); }
+}
+// On the plan stage the conversation takes over the working area, so the
+// toggle has to say which way it goes.
+function syncDock() {
+  const lbl = document.querySelector("#dockToggle .dt-label");
+  if (!lbl) return;
+  lbl.textContent = t(dockIsOpen() && document.body.dataset.stage === "plan" ? "dock_plan" : "dock_label");
+}
+function dockIsOpen() {
+  return !document.body.classList.contains("dock-closed");
+}
+
+// ── Toasts ──
+// Errors belong inside the design, not in an OS dialog.
+function toast(message, kind, action) {
+  const box = $("toasts");
+  const node = el("div", "toast" + (kind === "ok" ? " ok" : ""));
+  node.innerHTML = `<b>${esc(kind === "ok" ? "" : t("err_title"))}</b><span class="toast-msg">${esc(message)}</span>`;
+  if (kind === "ok") node.querySelector("b").remove();
+  // Something destructive should offer the way back, in the same breath.
+  if (action) {
+    const b = el("button", "toast-act", esc(action.label));
+    b.type = "button";
+    b.onclick = () => { node.remove(); action.onClick(); };
+    node.appendChild(b);
+  }
+  box.appendChild(node);
+  setTimeout(() => node.remove(), action ? 9000 : 6000);
 }
 
 // ── Chat ──
+function scrollChat() {
+  const log = $("chatLog");
+  log.scrollTop = log.scrollHeight;
+}
 function addMsg(text, who, extra = "") {
   const log = $("chatLog");
   const turn = el("div", `turn ${who} ${extra}`);
   if (who === "ai") turn.appendChild(el("div", "avatar", "s."));
   turn.appendChild(el("div", "bubble", esc(text)));
   log.appendChild(turn);
-  log.scrollTop = log.scrollHeight;
+  scrollChat();
   return turn;
 }
 function addTyping() {
@@ -611,18 +279,79 @@ function addTyping() {
   turn.appendChild(el("div", "avatar", "s."));
   turn.appendChild(el("div", "bubble typing", "<i></i><i></i><i></i>"));
   log.appendChild(turn);
-  log.scrollTop = log.scrollHeight;
+  scrollChat();
   return turn;
 }
+// A chip is either a suggested reply (a string) or an action ({label, onClick}).
 function setChips(options) {
   const box = $("chips");
   box.innerHTML = "";
   (options || []).forEach((opt) => {
-    const c = el("button", "chip", esc(opt));
+    const action = opt && typeof opt === "object";
+    const label = action ? opt.label : opt;
+    const c = el("button", "chip" + (action ? " chip-action" : ""), esc(label));
     c.type = "button";
-    c.onclick = () => send(opt);
+    c.onclick = action ? opt.onClick : () => send(label);
     box.appendChild(c);
   });
+}
+
+// Where the user is inside the three intake questions.
+// ── Interview state ──
+// The backend owns the flow: scope_check → optional disambiguation → adaptive
+// intake → plan_ready. Questions are skipped when it already knows the answer,
+// so the count is never fixed and is never inferred from assistant text. The
+// UI reports only what the response carries.
+const STAGE_LABEL = { scope_check: "stage_scope", disambiguation: "stage_disambig" };
+
+function turnState(turn) {
+  if (!turn || typeof turn !== "object") return null;
+  const p = turn.progress;
+  const answered = p && Number.isFinite(p.answered) && p.answered >= 0 ? Math.floor(p.answered) : null;
+  const max = p && Number.isFinite(p.max) && p.max > 0 ? Math.floor(p.max) : null;
+  const stage = typeof turn.stage === "string" ? turn.stage : null;
+  // The interview is over once a plan exists; progress stops being news.
+  if (stage === "plan_ready") return null;
+  if (answered == null && !STAGE_LABEL[stage]) return null;
+  return { stage, answered, max };
+}
+
+function renderTurnState(st) {
+  const note = $("trayNote");
+  const text = $("trayNoteText");
+  const bar = $("trayBar");
+  if (!st) { note.hidden = true; bar.hidden = true; return; }
+  note.hidden = false;
+
+  // Before the interview proper, the named stage says more than a count of
+  // zero would, so it wins when the backend sends both.
+  if (STAGE_LABEL[st.stage]) {
+    text.textContent = t(STAGE_LABEL[st.stage]);
+    bar.hidden = true;
+    return;
+  }
+  if (st.answered != null) {
+    // Never "step 3 of 5" — the backend cannot promise a total it may not reach.
+    text.textContent = fmt(t("intake_progress"), { n: st.answered });
+    if (st.max) {
+      bar.hidden = false;
+      $("trayFill").style.width = (clamp(st.answered / st.max, 0, 1) * 100).toFixed(0) + "%";
+      bar.setAttribute("aria-valuenow", String(st.answered));
+      bar.setAttribute("aria-valuemax", String(st.max));
+      bar.setAttribute("aria-label", t("aria_progress"));
+      bar.setAttribute("aria-valuetext", fmt(t("intake_progress"), { n: st.answered }));
+    } else {
+      bar.hidden = true;
+    }
+    return;
+  }
+}
+
+// A quiet channel for the things a sighted user simply sees happen.
+function announce(msg) {
+  const n = $("live");
+  n.textContent = "";
+  setTimeout(() => { n.textContent = msg; }, 60);
 }
 
 let busy = false;
@@ -632,20 +361,561 @@ function setBusy(b) {
   $("sendBtn").disabled = b || !$("input").value.trim();
 }
 
+// ── Chat history ───────────────────────────────────────────────────────
+// Every goal you start is its own chat, kept in localStorage so the list
+// survives a reload. A plan is stored as its plan object plus the start date
+// and which sessions are done — the schedule itself is regenerated, because
+// keeping hundreds of session rows per chat would not fit in the quota.
+const HISTORY_KEY = "startai_chats_v1";
+const MAX_CHATS = 50;
+const MAX_MSGS = 200;
+
+let chats = [];
+let activeChatId = null;
+
+// Browser-only state. Server-owned truth (plans, calendars, completion) is
+// re-fetched; what is kept here is this device's history plus preferences.
+// No secrets: the session token lives in memory for the life of the tab only.
+const SCHEMA = 2;
+const isObj = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+// Anything stored by an older build, hand-edited, or half-written by a crash
+// has to be survivable. Unknown shapes are dropped, never trusted.
+function sanitizeChat(c) {
+  if (!isObj(c) || typeof c.id !== "string" || !c.id) return null;
+  const now = Date.now();
+  const msgs = Array.isArray(c.messages) ? c.messages : [];
+  return {
+    id: c.id,
+    title: typeof c.title === "string" ? c.title.slice(0, 200) : "",
+    createdAt: Number.isFinite(c.createdAt) ? c.createdAt : now,
+    updatedAt: Number.isFinite(c.updatedAt) ? c.updatedAt : now,
+    messages: msgs
+      .filter((m) => isObj(m) && typeof m.t === "string" && (m.w === "ai" || m.w === "user"))
+      .slice(-MAX_MSGS)
+      .map((m) => ({ w: m.w, t: m.t, x: typeof m.x === "string" ? m.x : "" })),
+    chips: Array.isArray(c.chips) ? c.chips.filter((x) => typeof x === "string").slice(0, 12) : [],
+    planId: typeof c.planId === "string" ? c.planId : null,
+    plan: isObj(c.plan) ? c.plan : null,
+    cal: isObj(c.cal) ? c.cal : null,
+    intake: isObj(c.intake) ? c.intake : null,
+    turnState: isObj(c.turnState) ? c.turnState : null,
+    scheduled: !!c.scheduled,
+    stage: c.stage === "plan" ? "plan" : "intake",
+  };
+}
+
+function migrateChats(list, from) {
+  if (from < 2) {
+    // v1 stored a fixed-flow step name (intake_level, …). The backend owns the
+    // interview now, so the old marker is dropped rather than reinterpreted.
+    return list.map((c) => {
+      if (!isObj(c)) return c;
+      const next = { ...c, turnState: null };
+      delete next.trayStage;
+      delete next.doneKeys;
+      return next;
+    });
+  }
+  return list;
+}
+
+function loadHistory() {
+  chats = [];
+  activeChatId = null;
+  let raw = null;
+  try { raw = JSON.parse(lsGet(HISTORY_KEY) || "null"); }
+  catch (_) { return; }            // unreadable or unparseable: start clean
+  if (!isObj(raw)) return;
+  const version = Number.isFinite(raw.v) ? raw.v : 1;
+  let list = Array.isArray(raw.chats) ? raw.chats : [];
+  if (version < SCHEMA) list = migrateChats(list, version);
+  chats = list.map(sanitizeChat).filter(Boolean);
+  activeChatId = (typeof raw.activeId === "string" && chats.some((c) => c.id === raw.activeId))
+    ? raw.activeId : null;
+}
+function saveHistory() {
+  // lsSet reports failure rather than throwing, so quota is a false return.
+  const write = () => lsSet(HISTORY_KEY, JSON.stringify({ v: SCHEMA, activeId: activeChatId, chats }));
+  if (write()) return;
+  // Out of room: shed the oldest chats until it fits, rather than losing everything.
+  const oldestFirst = chats.slice().sort((a, b) => a.updatedAt - b.updatedAt);
+  while (oldestFirst.length > 1) {
+    const victim = oldestFirst.shift();
+    if (victim.id === activeChatId) continue;
+    chats = chats.filter((c) => c.id !== victim.id);
+    if (write()) return;
+  }
+}
+function activeChat() { return chats.find((c) => c.id === activeChatId) || null; }
+
+function chatTitle(c) {
+  if (!c) return t("chat_untitled");
+  if (c.title) return c.title;
+  if (c.plan && c.plan.skill) return c.plan.skill;
+  const first = (c.messages || []).find((m) => m.w === "user");
+  if (first && first.t) return first.t.length > 52 ? first.t.slice(0, 52).trim() + "…" : first.t;
+  return t("chat_untitled");
+}
+
+function logMsg(text, who, extra) {
+  const c = activeChat();
+  if (!c) return;
+  c.messages.push({ w: who, t: text, x: extra || "" });
+  if (c.messages.length > MAX_MSGS) c.messages.splice(0, c.messages.length - MAX_MSGS);
+  c.updatedAt = Date.now();
+  saveHistory();
+  renderChatList();
+}
+function persistChips(options) {
+  const c = activeChat();
+  if (!c) return;
+  // Action chips (Retry) belong to a moment, not to the transcript.
+  c.chips = (options || []).filter((o) => typeof o === "string");
+  saveHistory();
+}
+// Snapshot whatever the workspace is currently showing onto the active chat.
+function syncActiveChat() {
+  const c = activeChat();
+  if (!c) return;
+  c.planId = state.planId;
+  c.plan = state.plan ? JSON.parse(JSON.stringify(state.plan)) : null;
+  c.cal = (DEMO_MODE && c.plan && c.plan.startDate) ? diffSchedule(c.plan, state.events || []) : null;
+  c.scheduled = state.scheduled;
+  c.stage = document.body.dataset.stage;
+  if (DEMO_MODE) c.intake = DEMO_DB.intake ? { ...DEMO_DB.intake } : null;
+  c.updatedAt = Date.now();
+  saveHistory();
+  renderChatList();
+}
+
+// The schedule is a pure function of (plan, start date), so only what differs
+// from that baseline has to be stored: completed sessions, and anything a
+// rollover moved. That is a handful of rows instead of several hundred.
+function diffSchedule(plan, events) {
+  const base = buildSchedule(plan, plan.startDate);
+  const o = {};
+  const n = Math.min(base.length, events.length);
+  for (let i = 0; i < n; i += 1) {
+    const b = base[i];
+    const e = events[i];
+    if (e.status !== b.status || e.date !== b.date || e.movedFrom) {
+      o[i] = [e.status, e.date, e.movedFrom || ""];
+    }
+  }
+  // A rollover appends rows; there are few, so they are kept verbatim.
+  return { o, x: events.slice(base.length) };
+}
+function rebuildSchedule(plan, cal) {
+  const events = buildSchedule(plan, plan.startDate);
+  if (cal && cal.o) {
+    Object.keys(cal.o).forEach((i) => {
+      const e = events[i];
+      if (!e) return;
+      const [status, date, movedFrom] = cal.o[i];
+      e.status = status;
+      e.date = date;
+      if (movedFrom) e.movedFrom = movedFrom;
+    });
+  }
+  if (cal && cal.x) cal.x.forEach((e) => events.push(e));
+  DEMO_DB.calendars[plan.id] = events;
+  return events;
+}
+
+// Back to a blank slate, without a page reload.
+function resetWorkspace() {
+  animateRows = true;
+  state.planId = null; state.plan = null; state.events = [];
+  state.weekStart = null; state.scheduled = false; state.started = false;
+  $("chatLog").innerHTML = "";
+  $("planContent").innerHTML = ""; $("planContent").hidden = true; $("planEmpty").hidden = false;
+  $("kitContent").innerHTML = ""; $("kitEmpty").hidden = false;
+  $("weekContent").hidden = true; $("weekEmpty").hidden = false;
+  $("rollMsg").hidden = true;
+  $("goalBand").classList.remove("shifted");
+  $("scheduleBtn").disabled = true; $("emptyScheduleBtn").disabled = true;
+  $("confirmBtn").disabled = true; $("icsBtn").hidden = true;
+  state.scheduled = false; syncToolbar();
+  setChips([]); renderTurnState(null);
+  setStage("intake");
+  setDock(true);
+  switchTab("plan");
+}
+
+async function startNewChat() {
+  chats.unshift({
+    id: uid("chat"), title: "", createdAt: Date.now(), updatedAt: Date.now(),
+    messages: [], chips: [], stage: "intake", turnState: null,
+    planId: null, plan: null, cal: null, intake: null, scheduled: false,
+  });
+  if (chats.length > MAX_CHATS) chats.length = MAX_CHATS;
+  activeChatId = chats[0].id;
+  if (DEMO_MODE) DEMO_DB.intake = null;
+  resetWorkspace();
+  saveHistory();
+  renderChatList();
+  closeSidebarOnMobile();
+  await ensureSession(true);
+  $("input").focus();
+}
+
+async function openChat(id) {
+  const c = chats.find((x) => x.id === id);
+  if (!c) return;
+  closeSidebarOnMobile();
+  // Already open and already drawn — re-opening would only lose your place.
+  if (id === activeChatId && $("chatLog").children.length) return;
+  activeChatId = id;
+  saveHistory();
+  resetWorkspace();
+  renderChatList();
+
+  (c.messages || []).forEach((m) => addMsg(m.t, m.w, m.x));
+  setChips(c.chips || []);
+  renderTurnState(c.turnState || null);
+  state.started = (c.messages || []).some((m) => m.w === "user");
+
+  if (DEMO_MODE) {
+    DEMO_DB.intake = c.intake ? { ...c.intake } : null;
+    if (c.plan && c.plan.id) {
+      DEMO_DB.plans[c.plan.id] = JSON.parse(JSON.stringify(c.plan));
+      DEMO_DB.calendars[c.plan.id] = c.plan.startDate
+        ? rebuildSchedule(DEMO_DB.plans[c.plan.id], c.cal)
+        : [];
+    }
+  }
+  if (c.planId) {
+    try {
+      await loadPlan(c.planId);
+      setStage("plan");
+      setDock(false);
+      switchTab("plan");
+    } catch (e) {
+      toast(errText(e));
+    }
+  }
+  scrollChat();
+}
+
+function deleteChat(id) {
+  const idx = chats.findIndex((c) => c.id === id);
+  if (idx < 0) return;
+  const removed = chats[idx];
+  const wasActive = activeChatId === id;
+  chats.splice(idx, 1);
+  saveHistory();
+  renderChatList();
+  if (wasActive) {
+    if (chats.length) openChat(chats[0].id);
+    else startNewChat();
+  }
+  toast(fmt(t("chat_deleted"), { title: chatTitle(removed) }), "ok", {
+    label: t("undo"),
+    onClick: () => {
+      chats.splice(Math.min(idx, chats.length), 0, removed);
+      saveHistory();
+      renderChatList();
+    },
+  });
+}
+
+// ── Sidebar ──
+function chatGroup(c) {
+  const days = Math.floor((Date.now() - (c.updatedAt || 0)) / 86400000);
+  if (days <= 0) return "grp_today";
+  if (days === 1) return "grp_yesterday";
+  if (days <= 7) return "grp_week";
+  if (days <= 30) return "grp_month";
+  return "grp_older";
+}
+
+let renaming = null;
+function renderChatList() {
+  const box = $("sbList");
+  if (!box) return;
+  const q = lower(($("sbSearch").value || "").trim());
+  // A chat you have not said anything in yet is not history — it is the blank
+  // page you are looking at. It joins the list on your first message.
+  const list = chats
+    .filter((c) => c.planId || (c.messages || []).some((m) => m.w === "user"))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const shown = q ? list.filter((c) => lower(chatTitle(c)).includes(q)) : list;
+
+  box.innerHTML = "";
+  if (!shown.length) {
+    box.appendChild(el("div", "sb-none", esc(t(q ? "chats_no_match" : "chats_none"))));
+    return;
+  }
+
+  let group = null;
+  shown.forEach((c) => {
+    // Grouping is a way to read a long list; a search result is already short.
+    if (!q) {
+      const g = chatGroup(c);
+      if (g !== group) { group = g; box.appendChild(el("div", "sb-group", esc(t(g)))); }
+    }
+    const title = chatTitle(c);
+    const row = el("div", "sb-item" + (c.id === activeChatId ? " active" : ""));
+    row.dataset.id = c.id;
+
+    if (renaming === c.id) {
+      const input = el("input", "sb-rename");
+      input.value = title;
+      input.setAttribute("aria-label", t("act_rename"));
+      const commit = (save) => {
+        if (renaming !== c.id) return;
+        renaming = null;
+        if (save) {
+          const v = input.value.trim();
+          c.title = v && v !== (c.plan && c.plan.skill) ? v : "";
+          c.updatedAt = Date.now();
+          saveHistory();
+        }
+        renderChatList();
+      };
+      input.onkeydown = (e) => {
+        if (e.key === "Enter") { e.preventDefault(); commit(true); }
+        else if (e.key === "Escape") { e.preventDefault(); commit(false); }
+      };
+      input.onblur = () => commit(true);
+      row.appendChild(input);
+      box.appendChild(row);
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+      return;
+    }
+
+    const main = el("button", "sb-item-main", esc(title));
+    main.type = "button";
+    main.title = title;
+    if (c.id === activeChatId) main.setAttribute("aria-current", "true");
+    main.onclick = () => openChat(c.id);
+
+    const menu = el("button", "sb-item-menu", DOTS_SVG);
+    menu.type = "button";
+    menu.setAttribute("aria-haspopup", "menu");
+    menu.setAttribute("aria-expanded", "false");
+    menu.setAttribute("aria-label", fmt(t("aria_chat_menu"), { title }));
+    menu.onclick = (e) => { e.stopPropagation(); openChatMenu(c.id, menu); };
+
+    row.appendChild(main);
+    row.appendChild(menu);
+    box.appendChild(row);
+  });
+}
+
+let menuFor = null;
+function openChatMenu(id, anchor) {
+  const menu = $("sbMenu");
+  if (menuFor === id && !menu.hidden) { closeChatMenu(); return; }
+  closeChatMenu();
+  menuFor = id;
+  menu.hidden = false;
+  anchor.setAttribute("aria-expanded", "true");
+  anchor.closest(".sb-item").classList.add("menu-open");
+  const r = anchor.getBoundingClientRect();
+  const w = menu.offsetWidth || 170;
+  const h = menu.offsetHeight || 90;
+  menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+  menu.style.top = (r.bottom + h + 8 > window.innerHeight ? r.top - h - 6 : r.bottom + 6) + "px";
+  menu.querySelector("[data-act=rename]").focus();
+}
+function closeChatMenu() {
+  const menu = $("sbMenu");
+  menu.hidden = true;
+  menuFor = null;
+  document.querySelectorAll(".sb-item.menu-open").forEach((n) => n.classList.remove("menu-open"));
+  document.querySelectorAll(".sb-item-menu[aria-expanded=true]").forEach((n) => n.setAttribute("aria-expanded", "false"));
+}
+
+let sidebarOpen = document.documentElement.getAttribute("data-sb") !== "closed";
+function setSidebar(open) {
+  sidebarOpen = open;
+  document.body.classList.toggle("sb-closed", !open);
+  document.body.classList.toggle("sb-open", open);
+  document.documentElement.setAttribute("data-sb", open ? "open" : "closed");
+  if (window.innerWidth > 940) lsSet("startai_sidebar", open ? "1" : "0");
+  if (!open) closeChatMenu();
+}
+function closeSidebarOnMobile() {
+  if (window.innerWidth <= 940) setSidebar(false);
+}
+
+// ── Account + settings ─────────────────────────────────────────────────
+// There are no accounts here: the name is a local label, and the subtitle
+// says what the app is actually talking to rather than inventing a plan tier.
+function displayName() { return lsGet("startai_name") || t("acct_guest"); }
+function initials(name) {
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  return (parts.length > 1 ? parts[0][0] + parts[parts.length - 1][0] : parts[0].slice(0, 2)).toUpperCase();
+}
+function syncAccount() {
+  const name = displayName();
+  const plan = DEMO_MODE ? t("acct_demo") : t("acct_live");
+  [["acctAv", "amAv"], ["acctName", "amName"], ["acctPlan", "amPlan"]].forEach(([a, b], i) => {
+    const v = i === 0 ? initials(name) : i === 1 ? name : plan;
+    $(a).textContent = v;
+    $(b).textContent = v;
+  });
+  $("acctName").title = name;
+  syncGreeting();
+}
+
+let acctOpen = false;
+function setAcctMenu(open) {
+  const menu = $("acctMenu");
+  acctOpen = open;
+  menu.hidden = !open;
+  $("acctBtn").setAttribute("aria-expanded", String(open));
+  if (!open) return;
+  const r = $("acctBtn").getBoundingClientRect();
+  const w = menu.offsetWidth || 246;
+  const h = menu.offsetHeight || 300;
+  menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + "px";
+  menu.style.top = Math.max(8, r.top - h - 8) + "px";
+  menu.querySelector("[data-act]").focus();
+}
+
+const SHORTCUTS = [
+  { k: "sc_new", c: ["Ctrl", "Shift", "O"] },
+  { k: "sc_search", c: ["Ctrl", "K"] },
+  { k: "sc_sidebar", c: ["Ctrl", "B"] },
+  { k: "sc_send", c: ["Enter"] },
+  { k: "sc_esc", c: ["Esc"] },
+];
+function bytesText(n) {
+  return n < 1024 ? n + " B" : n < 1048576 ? (n / 1024).toFixed(1) + " KB" : (n / 1048576).toFixed(1) + " MB";
+}
+// Demo is a deliberate build-time choice, shown plainly. Nothing in the app
+// ever sets it — a live request that fails stays failed.
+function syncDemoBadge() {
+  const b = $("demoBadge");
+  if (!b) return;
+  b.hidden = !DEMO_MODE;
+  b.textContent = t("demo_badge");
+  b.title = t("demo_badge_title");
+  b.setAttribute("aria-label", t("demo_badge_title"));
+}
+
+function syncSettings() {
+  if ($("settings").hidden) return;
+  const tz = planTimezone();
+  const device = browserTimezone();
+  $("setTz").textContent = tz;
+  $("setTzNote").textContent = tz === device ? t("tz_same") : fmt(t("tz_differs"), { device });
+  $("setName").value = lsGet("startai_name") || "";
+  const pref = themePref();
+  $("themePick").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themePref === pref)));
+  $("langPick").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
+
+  const mac = /Mac|iP(hone|ad)/.test(navigator.platform || navigator.userAgent || "");
+  const list = $("kbdList");
+  list.innerHTML = "";
+  SHORTCUTS.forEach((s) => {
+    const keys = s.c.map((c) => (mac && c === "Ctrl" ? "⌘" : c));
+    const li = el("li", "", `<span>${esc(t(s.k))}</span>${keys.map((k) => `<kbd>${esc(k)}</kbd>`).join("")}`);
+    list.appendChild(li);
+  });
+
+  const bytes = (lsGet(HISTORY_KEY) || "").length;
+  $("setStorage").textContent = fmt(t("set_storage"), { n: bytesText(bytes), c: chats.length });
+}
+
+let lastFocus = null;
+function openSettings(section) {
+  lastFocus = document.activeElement;
+  $("settings").hidden = false;
+  hideConfirm();
+  syncSettings();
+  if (section) {
+    const el2 = $("set-" + section);
+    if (el2) el2.scrollIntoView({ block: "start" });
+  } else {
+    $("setBody").scrollTop = 0;
+  }
+  (section === "profile" ? $("setName") : $("setClose")).focus();
+}
+function closeSettings() {
+  $("settings").hidden = true;
+  hideConfirm();
+  if (lastFocus && lastFocus.isConnected) lastFocus.focus();
+  lastFocus = null;
+}
+
+// Destructive choices are confirmed inside the design, not in an OS dialog.
+let confirmAction = null;
+function askConfirm(textKey, onYes) {
+  confirmAction = onYes;
+  $("setConfirmText").textContent = t(textKey);
+  $("setConfirm").hidden = false;
+  $("setConfirmYes").focus();
+}
+function hideConfirm() { confirmAction = null; $("setConfirm").hidden = true; }
+
+async function clearAllChats() {
+  chats = [];
+  activeChatId = null;
+  saveHistory();
+  if (DEMO_MODE) { DEMO_DB.plans = {}; DEMO_DB.calendars = {}; DEMO_DB.intake = null; }
+  await startNewChat();
+  syncSettings();
+  toast(t("done_clear"), "ok");
+}
+async function resetAppData() {
+  ["startai_name", "startai_sidebar", "startai_uid", "startai_lang"].forEach((k) => lsDel(k));
+  lsSet("startai_theme", "system");
+  applyTheme("system");
+  setLang("en");
+  await clearAllChats();
+  syncAccount();
+  toast(t("done_reset"), "ok");
+}
+
 // ── Bootstrap ──
-async function boot() {
+async function ensureSession(greet) {
   try {
-    const saved = localStorage.getItem("startai_uid") || "";
+    const saved = lsGet("startai_uid") || "";
     const r = await api("/api/session", { method: "POST", body: JSON.stringify({ userId: saved, lang: LANG }) });
     state.userId = r.userId;
     state.sessionId = r.sessionId;
-    localStorage.setItem("startai_uid", r.userId);
-    addMsg(r.assistant, "ai");
-    setChips(t("starters"));
+    if (r.token) state.token = r.token;
+    // The backend owns the scheduling timezone.
+    if (typeof r.timezone === "string" && r.timezone) state.timezone = r.timezone;
+    lsSet("startai_uid", r.userId);
+    if (greet) {
+      if (r.assistant) { addMsg(r.assistant, "ai"); logMsg(r.assistant, "ai", ""); }
+      setChips(t("starters"));
+      persistChips(t("starters"));
+    }
     refreshMeter();
   } catch (e) {
-    addMsg(fmt(t("err_backend"), { e: e.message }), "ai", "declined");
+    // At boot, "is the server up?" is the more actionable version of offline.
+    addMsg(e.code === "NETWORK" ? t("err_backend") : errText(e), "ai", "declined");
+    // A dead end needs a way out, not just an explanation of itself.
+    setChips([{ label: t("btn_retry"), onClick: () => { $("chatLog").innerHTML = ""; setChips([]); ensureSession(greet); } }]);
   }
+}
+
+async function boot() {
+  loadHistory();
+  setSidebar(sidebarOpen);
+  renderChatList();
+  const c = activeChat();
+  if (c && ((c.messages && c.messages.length) || c.planId)) {
+    await openChat(c.id);
+    await ensureSession(false);
+    return;
+  }
+  if (c) {
+    // An empty chat is already waiting — use it rather than stacking another.
+    resetWorkspace();
+    renderChatList();
+    await ensureSession(true);
+    $("input").focus();
+    return;
+  }
+  await startNewChat();
 }
 
 async function send(text) {
@@ -655,7 +925,9 @@ async function send(text) {
   $("input").value = "";
   $("sendBtn").disabled = true;
   setChips([]);
+  if (!dockIsOpen()) setDock(true); // never answer into a closed drawer
   addMsg(msg, "user");
+  logMsg(msg, "user", "");
   setBusy(true);
   const typing = addTyping();
 
@@ -665,65 +937,258 @@ async function send(text) {
       body: JSON.stringify({ userId: state.userId, sessionId: state.sessionId, message: msg, lang: LANG }),
     });
     typing.remove();
-    addMsg(turn.assistant, "ai", turn.stage === "out_of_scope" ? "declined" : "");
+    const tone = turn.stage === "out_of_scope" ? "declined" : "";
+    addMsg(turn.assistant, "ai", tone);
+    logMsg(turn.assistant, "ai", tone);
     setChips(turn.options);
-    if (turn.planId) { await loadPlan(turn.planId); switchTab("plan"); }
+    persistChips(turn.options);
+    const st = turnState(turn);
+    renderTurnState(st);
+    const c = activeChat();
+    if (c) c.turnState = st;
+    if (turn.planId) {
+      await loadPlan(turn.planId);
+      setStage("plan");
+      setDock(false);
+      switchTab("plan");
+      // The page just changed underneath the user. Say so, and land focus on
+      // the new content instead of dropping it on <body> with the composer.
+      announce(t("plan_ready_sr"));
+      $("gbTitle").focus();
+    }
+    syncActiveChat();
     refreshMeter();
   } catch (e) {
     typing.remove();
-    addMsg(fmt(t("err_generic"), { e: e.message }), "ai", "declined");
+    addMsg(errText(e), "ai", "declined");
   } finally {
     setBusy(false);
-    $("input").focus();
+    if (dockIsOpen()) $("input").focus();
   }
 }
 
 // ── Plan ──
-async function loadPlan(planId) {
+// `animate: false` is used for in-place refreshes, so ticking one checkbox
+// does not replay every entrance animation on the page.
+let animateRows = true;
+async function loadPlan(planId, opts = {}) {
+  animateRows = opts.animate !== false;
   state.planId = planId;
   state.plan = await api("/api/plan/" + planId);
-  renderPlan(state.plan);
-  renderSetup(state.plan.setupItems || []);
-  $("goalPill").hidden = false;
-  $("goalPillText").textContent = state.plan.skill + (state.plan.path ? " · " + state.plan.path : "");
-  $("scheduleBtn").disabled = false;
-  if (DEMO_MODE) {
-    $("icsBtn").hidden = true;
-  } else {
-    $("icsBtn").href = API + "/api/plan/" + planId + "/ics";
-    $("icsBtn").hidden = false;
-  }
+  // Sessions first: the task list and the progress numbers are read from them.
   await loadCalendar();
+  renderGoalBand(state.plan);
+  renderPlan(state.plan);
+  renderKit(state.plan.setupItems || [], state.plan.budget);
+  $("scheduleBtn").disabled = false;
+  $("emptyScheduleBtn").disabled = false;
+  refreshIcs();
+  syncActiveChat();
 }
 
+// ── Sessions ──
+// One pass over the calendar answers everything the Plan tab asks: what is on
+// today, how far along each task is, and how much of the plan is behind you.
+function sessionStats() {
+  const today = isoToday();
+  const by = {};
+  (state.events || []).forEach((e) => {
+    const key = e.todoId || e.title;
+    const s = by[key] || (by[key] = { total: 0, done: 0, today: null, next: null });
+    s.total += 1;
+    if (e.status === "done") s.done += 1;
+    if (e.date === today && !s.today) s.today = e;
+    if (e.date > today && (!s.next || e.date < s.next)) s.next = e.date;
+  });
+  return by;
+}
+function planProgress() {
+  const evs = state.events || [];
+  return { done: evs.filter((e) => e.status === "done").length, total: evs.length };
+}
+
+// ── Calendar export ──
+// Demo mode has no backend to render .ics, so the browser builds it. The
+// button behaves the same either way instead of vanishing.
+let icsUrl = null;
+function refreshIcs() {
+  const btn = $("icsBtn");
+  if (!DEMO_MODE) {
+    btn.href = API + "/api/plan/" + state.planId + "/ics";
+    btn.removeAttribute("download");
+    btn.hidden = false;
+    return;
+  }
+  const evs = state.events || [];
+  if (!evs.length || !state.plan) { btn.hidden = true; return; }
+  if (icsUrl) URL.revokeObjectURL(icsUrl);
+  icsUrl = URL.createObjectURL(new Blob([buildIcs(state.plan, evs)], { type: "text/calendar;charset=utf-8" }));
+  btn.href = icsUrl;
+  btn.download = (String(state.plan.skill || "plan").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plan") + ".ics";
+  btn.hidden = false;
+}
+function buildIcs(plan, events) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp = new Date().toISOString().replace(/[-:]|\.\d{3}/g, "");
+  const ics = (s) => String(s == null ? "" : s).replace(/([,;\\])/g, "\\$1").replace(/\r?\n/g, "\\n");
+  const at = (date, time, addMin) => {
+    const [h, m] = String(time || "18:00").split(":").map(Number);
+    const dt = new Date(date + "T00:00:00");
+    dt.setHours(h || 0, (m || 0) + (addMin || 0), 0, 0);
+    return `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+  };
+  const out = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//start.ai//plan//EN", "CALSCALE:GREGORIAN", "X-WR-CALNAME:" + ics(plan.skill)];
+  events.forEach((e, i) => {
+    out.push(
+      "BEGIN:VEVENT",
+      `UID:${plan.id}-${i}@start.ai`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART:${at(e.date, e.startTime, 0)}`,
+      `DTEND:${at(e.date, e.startTime, e.durationMin || 30)}`,
+      `SUMMARY:${ics(e.title)}`,
+      `DESCRIPTION:${ics(plan.skill)}`,
+      "END:VEVENT",
+    );
+  });
+  out.push("END:VCALENDAR");
+  return out.join("\r\n");
+}
+
+// The plan's own metadata, split back out of the headline it was welded into.
+function planFacts(p) {
+  const tail = String(p.path || "").split(" · ");
+  return {
+    track: p.track || tail[0] || "",
+    level: p.level || tail[1] || "",
+    budget: p.budget != null ? p.budget : null,
+    dailyMin: p.dailyMin || parseInt(tail[2], 10) || 0,
+    weeks: p.weeksTotal || 0,
+  };
+}
+function sessionsPerWeek(p) {
+  const per = { daily: 7, thrice_weekly: 3, twice_weekly: 2, weekly: 1, once: 0 };
+  return (p.todos || []).reduce((n, td) => n + (per[td.frequency] != null ? per[td.frequency] : 1), 0);
+}
+
+// ── Goal band: the promise, on every tab ──
+function renderGoalBand(p) {
+  const f = planFacts(p);
+  $("gbTitle").textContent = p.skill;
+  $("gbTrack").textContent = f.track;
+
+  const chips = $("gbChips");
+  chips.innerHTML = "";
+  const chip = (label, value, mono) => {
+    const c = el("span", "gb-chip");
+    c.innerHTML = `<u>${esc(label)}</u><span class="${mono ? "v" : ""}">${esc(value)}</span>`;
+    chips.appendChild(c);
+  };
+  if (f.level) chip(t("chip_level"), tg("lvl", f.level), false);
+  if (f.budget != null) chip(t("chip_budget"), f.budget === 0 ? t("budget_free") : "≤$" + f.budget, f.budget !== 0);
+  if (f.dailyMin) chip(t("chip_daily"), fmt(t("per_day"), { n: f.dailyMin }), true);
+  if (f.weeks) chip(t("chip_span"), fmt(t("weeks_n"), { n: f.weeks }), true);
+  chip(t("chip_load"), fmt(t("per_week"), { n: sessionsPerWeek(p) }), true);
+
+  updateGoalRail(p, false);
+}
+
+function updateGoalRail(p, shifted) {
+  const band = $("goalBand");
+  band.classList.toggle("shifted", !!shifted);
+
+  const start = p.startDate;
+  const finish = p.finishDate;
+  const today = isoToday();
+
+  $("lblStart").innerHTML = `${esc(t("lbl_started"))}<b>${esc(start ? prettyDate(start) : "—")}</b>`;
+  $("lblNow").innerHTML = `${esc(t("lbl_today"))}<b>${esc(prettyDate(today))}</b>`;
+  $("lblEnd").innerHTML = finish
+    ? `${esc(t("lbl_finish"))}<b>${esc(prettyDate(finish))}</b>`
+    : `${esc(t("lbl_finish"))}<b>${esc(fmt(t("weeks_approx"), { n: p.weeksTotal }))}</b>`;
+
+  const pct = (start && finish) ? clamp(daysBetween(start, today) / Math.max(1, daysBetween(start, finish)), 0, 1) : 0;
+  const left = (pct * 100).toFixed(1) + "%";
+  $("railFill").style.width = left;
+  $("tickNow").style.left = left;
+  $("lblNow").style.left = left;
+  // Only mark "today" while today is actually on the rail, and only label it
+  // where the label won't sit on top of Started or Finish.
+  const onRail = !!(start && finish && today >= start && today <= finish);
+  $("tickNow").hidden = !onRail;
+  $("lblNow").hidden = !onRail || pct < 0.09 || pct > 0.91;
+
+  // Progress counts real sessions on the calendar, not recurring task rows.
+  const prog = planProgress();
+  $("gbProgress").textContent = start
+    ? fmt(t("gb_progress"), { w: weekIndex(p), t: p.weeksTotal, d: prog.done, n: prog.total })
+    : t("gb_unscheduled");
+
+  const slipDays = (p.originalFinishDate && finish && p.originalFinishDate !== finish)
+    ? daysBetween(p.originalFinishDate, finish) : 0;
+  const slip = $("gbSlip");
+  slip.classList.toggle("moved", slipDays > 0);
+  slip.textContent = start ? (slipDays > 0 ? fmt(t("gb_moved"), { d: slipDays }) : t("gb_ontrack")) : "";
+
+  updatePlanState(p, slipDays);
+}
+
+function weekIndex(p) {
+  if (!p.startDate) return 1;
+  return clamp(Math.floor(daysBetween(p.startDate, isoToday()) / 7) + 1, 1, p.weeksTotal || 1);
+}
+
+// The header shows the user's state, not the gateway's.
+function updatePlanState(p, slipDays) {
+  const wrap = $("planState");
+  const dot = $("psDot");
+  wrap.hidden = false;
+  if (!p || !p.startDate) {
+    dot.className = "ps-dot slipped";
+    $("psText").textContent = t("ps_planning");
+    return;
+  }
+  const behind = slipDays > 0;
+  dot.className = "ps-dot" + (behind ? " slipped" : "");
+  $("psText").textContent = behind
+    ? fmt(t("ps_week_slip"), { w: weekIndex(p), t: p.weeksTotal, d: slipDays })
+    : fmt(t("ps_week"), { w: weekIndex(p), t: p.weeksTotal });
+}
+
+// ── Plan tab: assessment, the spine, and the one task list ──
 function renderPlan(p) {
   $("planEmpty").hidden = true;
   const box = $("planContent");
   box.hidden = false;
   box.innerHTML = "";
 
-  const head = el("div", "goal-head");
+  const head = el("div", "plan-intro");
   head.innerHTML =
-    `<div class="goal-eyebrow">${t("your_plan")}</div>
-     <h2 class="goal-title">${esc(p.skill)}${p.path ? ` <span class="path">· ${esc(p.path)}</span>` : ""}</h2>
-     <p class="assessment">${esc(p.assessment)}</p>
+    `<p class="assessment">${esc(p.assessment)}</p>
      ${p.feasibility ? `<div class="reality">${WARN_SVG}<span>${esc(p.feasibility)}</span></div>` : ""}`;
   box.appendChild(head);
 
-  box.appendChild(el("div", "section-label", t("roadmap")));
+  // Roadmap and tasks sit side by side wherever there is room for both.
+  const grid = el("div", "plan-grid");
+  const colRoad = el("section");
+  const colTasks = el("section");
+  grid.appendChild(colRoad);
+  grid.appendChild(colTasks);
+  box.appendChild(grid);
+
+  colRoad.appendChild(el("div", "section-label", t("roadmap")));
   const spine = el("ol", "spine");
   const phases = p.phases || [];
   const msByPhase = {};
   (p.milestones || []).forEach((m) => { (msByPhase[m.phase] = msByPhase[m.phase] || []).push(m); });
   const usedKeys = new Set(phases.map((ph) => ph.key));
 
+  const msRow = (m) =>
+    `<li class="ms"><span class="diam"></span><span>${esc(m.title)}</span><time>${esc(prettyDate(m.targetDate))}</time></li>`;
+
   phases.forEach((ph, idx) => {
     const li = el("li", "node phase");
-    li.style.animationDelay = idx * 0.06 + "s";
-    let msHtml = "";
-    (msByPhase[ph.key] || []).forEach((m) => {
-      msHtml += `<li class="ms"><span class="diam"></span><span>${esc(m.title)}</span><time>${esc(prettyDate(m.targetDate))}</time></li>`;
-    });
+    if (animateRows) li.style.animationDelay = idx * 0.06 + "s";
+    const msHtml = (msByPhase[ph.key] || []).map(msRow).join("");
     li.innerHTML =
       `<span class="node-dot"></span>
        <span class="wk">W${ph.weekStart}–${ph.weekEnd}</span>
@@ -736,40 +1201,72 @@ function renderPlan(p) {
   const orphans = (p.milestones || []).filter((m) => !usedKeys.has(m.phase));
   if (orphans.length) {
     const li = el("li", "node phase");
-    let msHtml = "";
-    orphans.forEach((m) => { msHtml += `<li class="ms"><span class="diam"></span><span>${esc(m.title)}</span><time>${esc(prettyDate(m.targetDate))}</time></li>`; });
-    li.innerHTML = `<span class="node-dot"></span><span class="wk">${t("roadmap")}</span><ul class="ms-list">${msHtml}</ul>`;
+    li.innerHTML = `<span class="node-dot"></span><span class="wk">${esc(t("roadmap"))}</span><ul class="ms-list">${orphans.map(msRow).join("")}</ul>`;
     spine.appendChild(li);
   }
 
   const fin = el("li", "node finish");
   fin.innerHTML =
-    `<span class="node-dot">🏁</span>
-     <span class="wk">${t("target_finish")}</span>
+    `<span class="node-dot">${FLAG_SVG}</span>
+     <span class="wk">${esc(t("target_finish"))}</span>
      <h4 id="spineFinishDate"></h4>
      <div class="shift" id="spineShift"></div>`;
   spine.appendChild(fin);
-  box.appendChild(spine);
+  colRoad.appendChild(spine);
 
-  box.appendChild(el("div", "section-label", t("tasks")));
+  colTasks.appendChild(el("div", "section-label", t("tasks")));
+  const stats = sessionStats();
   (p.todos || []).forEach((td, i) => {
-    const done = td.status === "done";
-    const row = el("div", "todo" + (done ? " done" : ""));
-    row.style.animationDelay = Math.min(i * 0.04, 0.4) + "s";
-    const label = el("label", "check");
-    label.innerHTML = `<input type="checkbox" ${done ? "checked disabled" : ""} aria-label="done"><span class="box">${CHECK_SVG}</span>`;
-    label.querySelector("input").onchange = () => completeTodo(td.id);
-    const body = el("div", "todo-body");
-    body.innerHTML =
-      `<div class="t">${esc(td.title)}</div>
-       <div class="todo-meta"><span class="pill ${esc(td.priority)}">${esc(tg("prio", td.priority))}</span>
-       <span>${td.durationMin} ${t("min")}</span><span>${esc(tg("freq", td.frequency))}</span>${td.phase ? `<span>${esc(td.phase)}</span>` : ""}</div>`;
-    row.appendChild(label);
-    row.appendChild(body);
-    box.appendChild(row);
+    colTasks.appendChild(todoRow(td, i, stats[td.id] || stats[td.title] || null));
   });
 
   updateSpineFinish(p);
+}
+
+// One task row. These tasks recur, so the checkbox means "today's session is
+// done" — it appears only on days the task is actually on, and it can be
+// unticked. A running count keeps the long game visible.
+function todoRow(td, i, st) {
+  const today = st && st.today;
+  const isDone = !!(today && today.status === "done");
+  const row = el("div", "todo" + (isDone ? " done" : "") + (today ? " is-today" : ""));
+  if (animateRows) row.style.animationDelay = Math.min(i * 0.04, 0.4) + "s";
+  const cbId = "cb-" + td.id;
+
+  const check = el("span", "check" + (today ? "" : " idle"));
+  if (today) {
+    check.innerHTML = `<input type="checkbox" id="${esc(cbId)}"${isDone ? " checked" : ""}><span class="box">${CHECK_SVG}</span>`;
+    check.querySelector("input").onchange = (e) => toggleTodo(td.id, today.date, e.target.checked);
+  } else {
+    check.innerHTML = `<span class="box"></span>`;
+  }
+
+  const title = today
+    ? `<label class="t" for="${esc(cbId)}">${esc(td.title)}</label>`
+    : `<span class="t">${esc(td.title)}</span>`;
+  const sched = st
+    ? `<div class="todo-sched">
+         ${today
+           ? `<span class="tag-today">${esc(t("today_tag"))}</span>`
+           : st.next ? `<span>${esc(fmt(t("next_on"), { d: prettyDate(st.next) }))}</span>` : "<span></span>"}
+         <span class="todo-prog">${esc(fmt(t("sess_done_of"), { d: st.done, n: st.total }))}</span>
+       </div>`
+    : "";
+
+  const body = el("div", "todo-body");
+  body.innerHTML =
+    `${title}
+     <div class="todo-meta">
+       <span class="weight" role="img" data-w="${esc(td.priority)}" aria-label="${esc(tg("prio", td.priority))}"><i></i><i></i><i></i></span>
+       <span>${td.durationMin} ${esc(t("min"))}</span>
+       <span>${esc(tg("freq", td.frequency))}</span>
+       ${td.phase ? `<span class="ph">${esc(td.phase)}</span>` : ""}
+     </div>
+     ${sched}`;
+
+  row.appendChild(check);
+  row.appendChild(body);
+  return row;
 }
 
 function updateSpineFinish(p) {
@@ -782,128 +1279,269 @@ function updateSpineFinish(p) {
       ? fmt(t("moved_from"), { d: prettyDate(p.originalFinishDate) }) : "";
   } else {
     dateEl.textContent = fmt(t("weeks_approx"), { n: p.weeksTotal });
-    shiftEl.textContent = t("finish_set");
+    shiftEl.textContent = t("finish_pending");
   }
 }
 
-function renderSetup(items) {
-  const box = $("setupContent");
+function renderKit(items, budget) {
+  const box = $("kitContent");
   box.innerHTML = "";
-  if (!items.length) { $("setupEmpty").hidden = false; return; }
-  $("setupEmpty").hidden = true;
-  items.forEach((s, i) => {
-    const c = el("div", "setup-card");
-    c.style.animationDelay = i * 0.05 + "s";
+  if (!items.length) { $("kitEmpty").hidden = false; return; }
+  $("kitEmpty").hidden = true;
+
+  const priced = items.map((s) => {
+    const n = String(s.priceRange || "").match(/\d+/g) || ["0"];
+    return { ...s, lo: parseInt(n[0], 10) || 0, hi: parseInt(n[n.length - 1], 10) || 0 };
+  });
+  // With nothing to spend, "free path first" has to mean the order too.
+  const ordered = budget === 0 ? priced.slice().sort((a, b) => a.lo - b.lo || a.hi - b.hi) : priced;
+
+  // Walk the list cheapest-cost-first and mark where the budget runs out, so
+  // the answer to "what can I actually get?" is on the page.
+  let spent = 0;
+  ordered.forEach((s, i) => {
+    const affordable = budget == null || spent + s.lo <= budget;
+    if (affordable) spent += s.lo;
+    const c = el("div", "setup-card" + (affordable ? "" : " over"));
+    if (animateRows) c.style.animationDelay = i * 0.05 + "s";
     c.innerHTML =
       `<div class="setup-rank">${i + 1}</div>
        <div class="setup-main">
-         <div class="setup-row"><span class="setup-name">${esc(s.name)}</span><span class="setup-price">${esc(s.priceRange)}</span></div>
+         <div class="setup-row">
+           <span class="setup-name">${esc(s.name)}</span>
+           ${affordable ? "" : `<span class="setup-over">${esc(t("kit_item_over"))}</span>`}
+           <span class="setup-price">${esc(s.priceRange)}</span>
+         </div>
          ${s.category ? `<div class="setup-cat">${esc(s.category)}</div>` : ""}
          <div class="setup-why">${esc(s.rationale)}</div>
        </div>`;
     box.appendChild(c);
   });
+
+  const lo = priced.reduce((n, s) => n + s.lo, 0);
+  const hi = priced.reduce((n, s) => n + s.hi, 0);
+  const freeCount = priced.filter((s) => s.hi === 0).length;
+
+  const foot = el("div", "kit-foot");
+  foot.innerHTML =
+    `<span>${fmt(esc(t("kit_free")), { n: `<b>${freeCount}</b>`, m: `<b>${priced.length}</b>` })}</span>
+     <span>${fmt(esc(t("kit_total")), { lo: `<b>${lo}</b>`, hi: `<b>${hi}</b>` })}</span>`;
+  if (budget != null) {
+    const verdict = budget === 0 ? "free" : hi <= budget ? "fits" : lo <= budget ? "tight" : "over";
+    const v = el("span", "kit-verdict " + (verdict === "free" ? "tight" : verdict));
+    v.textContent = budget === 0
+      ? t("kit_v_free")
+      : fmt(t(verdict === "fits" ? "kit_v_fits" : verdict === "tight" ? "kit_v_tight" : "kit_v_over"), { n: budget });
+    foot.appendChild(v);
+  }
+  box.appendChild(foot);
 }
 
-async function completeTodo(todoId) {
+async function toggleTodo(todoId, date, done) {
+  const keepScroll = $("paneScroll").scrollTop;
   try {
-    await api("/api/todo/complete", { method: "POST", body: JSON.stringify({ planId: state.planId, todoId }) });
-    await loadPlan(state.planId);
-  } catch (e) { alert(e.message); }
+    await api("/api/todo/complete", {
+      method: "POST",
+      body: JSON.stringify({ planId: state.planId, todoId, date, done }),
+    });
+    await loadPlan(state.planId, { animate: false });
+    $("paneScroll").scrollTop = keepScroll;
+    // The server owns completion truth. If it declined the change, the
+    // checkbox has already snapped back — don't also claim it worked.
+    const ev = (state.events || []).find((e) => (e.todoId || e.title) === todoId && e.date === date);
+    const applied = !ev || (ev.status === "done") === !!done;
+    toast(applied ? t(done ? "toast_logged" : "toast_unlogged") : t("err_generic_safe"), applied ? "ok" : undefined);
+  } catch (e) {
+    toast(errText(e));
+    // Put the checkbox back where the server actually thinks it is.
+    await loadPlan(state.planId, { animate: false });
+    $("paneScroll").scrollTop = keepScroll;
+  }
 }
 
-// ── Calendar ──
+// ── Schedule ──
 async function schedule() {
   try {
     const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ planId: state.planId }) });
-    state.plan.finishDate = r.finishDate;
-    state.plan.startDate = r.startDate;
-    if (!state.plan.originalFinishDate) state.plan.originalFinishDate = r.finishDate;
-    $("confirmBtn").disabled = false;
-    $("rolloverBtn").disabled = false;
-    switchTab("calendar");
-    await loadCalendar();
+    state.weekStart = null;
+    state.scheduled = true;
+    await loadPlan(state.planId, { animate: false });
+    // Backends that do not echo the dates back on GET still get them here.
+    if (!state.plan.startDate) state.plan.startDate = r.startDate;
+    if (!state.plan.finishDate) state.plan.finishDate = r.finishDate;
+    if (!state.plan.originalFinishDate) state.plan.originalFinishDate = state.plan.finishDate;
+    syncToolbar();
     updateSpineFinish(state.plan);
-  } catch (e) { alert(e.message); }
+    updateGoalRail(state.plan, false);
+    switchTab("week");
+    renderWeek();
+    toast(fmt(t("toast_scheduled"), { n: (state.events || []).length, d: prettyDate(state.plan.finishDate) }), "ok");
+  } catch (e) { toast(errText(e)); }
 }
 
 async function confirmSchedule() {
   try {
     await api("/api/schedule/confirm", { method: "POST", body: JSON.stringify({ planId: state.planId }) });
     await loadCalendar();
-  } catch (e) { alert(e.message); }
+    toast(t("toast_confirmed"), "ok");
+  } catch (e) { toast(errText(e)); }
+}
+
+// Once it is scheduled, "Schedule it" stops being the primary thing to do.
+function syncToolbar() {
+  const done = state.scheduled;
+  const btn = $("scheduleBtn");
+  btn.classList.toggle("primary", !done);
+  btn.textContent = t(done ? "btn_reschedule" : "btn_schedule");
+  btn.dataset.i18n = done ? "btn_reschedule" : "btn_schedule";
+  $("confirmBtn").disabled = !done;
+  $("confirmBtn").classList.toggle("primary", done);
+  $("rolloverBtn").disabled = !done;
+  $("emptyScheduleBtn").disabled = !state.planId;
 }
 
 async function loadCalendar() {
   if (!state.planId) return;
-  const events = (await api("/api/calendar?planId=" + state.planId)) || [];
-  renderCalendar(events);
-  if (state.plan) showFinish(state.plan.finishDate, false);
-}
-
-function renderCalendar(events) {
-  events = events || [];
-  const box = $("calContent");
-  box.innerHTML = "";
-  const todos = (state.plan && state.plan.todos) || [];
-
-  if (todos.length) {
-    const todoSection = el("div", "cal-todos");
-    todoSection.appendChild(el("div", "section-label", t("tasks")));
-    todos.forEach((td, i) => {
-      const done = td.status === "done";
-      const row = el("div", "todo" + (done ? " done" : ""));
-      row.style.animationDelay = Math.min(i * 0.03, 0.24) + "s";
-      const label = el("label", "check");
-      label.innerHTML = `<input type="checkbox" ${done ? "checked disabled" : ""} aria-label="done"><span class="box">${CHECK_SVG}</span>`;
-      label.querySelector("input").onchange = () => completeTodo(td.id);
-      const body = el("div", "todo-body");
-      body.innerHTML =
-        `<div class="t">${esc(td.title)}</div>
-         <div class="todo-meta"><span class="pill ${esc(td.priority)}">${esc(tg("prio", td.priority))}</span>
-         <span>${td.durationMin} ${t("min")}</span><span>${esc(tg("freq", td.frequency))}</span>${td.phase ? `<span>${esc(td.phase)}</span>` : ""}</div>`;
-      row.appendChild(label);
-      row.appendChild(body);
-      todoSection.appendChild(row);
-    });
-    box.appendChild(todoSection);
-  }
-
-  if (!events.length) { $("calEmpty").hidden = false; return; }
-  $("calEmpty").hidden = true;
-
-  const byDay = {};
-  events.forEach((ev) => { (byDay[ev.date] = byDay[ev.date] || []).push(ev); });
-  Object.keys(byDay).sort().forEach((date, di) => {
-    const day = el("div", "cal-day");
-    day.style.animationDelay = Math.min(di * 0.03, 0.3) + "s";
-    day.appendChild(el("div", "cal-date", esc(prettyDateFull(date))));
-    byDay[date].forEach((ev) => {
-      const row = el("div", "cal-ev" + (ev.status === "done" ? " done" : "") + (ev.status === "rolled_over" ? " rolled" : ""));
-      row.innerHTML =
-        `<span class="time">${esc(ev.startTime)}</span>
-         <span class="ttl">${esc(ev.title)}</span>
-         <span class="st">${esc(tg("status", ev.status))}</span>`;
-      day.appendChild(row);
-    });
-    box.appendChild(day);
+  const raw = (await api("/api/calendar?planId=" + state.planId)) || [];
+  // Backends that return bare events still get a real week grid: borrow the
+  // duration and weight from the task the session came from.
+  const byTitle = {};
+  ((state.plan && state.plan.todos) || []).forEach((td) => { byTitle[td.title] = td; });
+  state.events = raw.map((e) => {
+    const td = byTitle[e.title];
+    return {
+      ...e,
+      todoId: e.todoId || (td ? td.id : null),
+      durationMin: e.durationMin != null ? e.durationMin : (td ? td.durationMin : null),
+      priority: e.priority || (td ? td.priority : null),
+    };
   });
+  if (state.events.length) state.scheduled = true;
+  syncToolbar();
+  renderWeek();
+  if (state.plan) updateGoalRail(state.plan, $("goalBand").classList.contains("shifted"));
 }
 
-function showFinish(finishDate, shifted) {
-  const p = state.plan;
-  if (!p || !finishDate) return;
-  const line = $("finishLine");
-  line.hidden = false;
-  line.classList.toggle("shifted", !!shifted);
-  let html = `<span class="lbl">${t("target_finish")}</span><span class="date">${esc(prettyDate(finishDate))}</span>`;
-  if (p.originalFinishDate && p.originalFinishDate !== finishDate) {
-    html += `<span class="orig">${fmt(t("originally"), { d: prettyDate(p.originalFinishDate) })}</span>`;
+// ── Week grid ──
+// A week reads as a week: seven columns, real times, free days visible.
+function mondayOf(iso) {
+  const dt = new Date(iso + "T00:00:00Z");
+  const shift = (dt.getUTCDay() + 6) % 7; // Monday = 0
+  return addDays(iso, -shift);
+}
+function renderWeek() {
+  const events = state.events || [];
+  $("weekEmpty").hidden = !!events.length;
+  $("weekContent").hidden = !events.length;
+  if (!events.length) return;
+
+  const dates = events.map((e) => e.date).sort();
+  const today = isoToday();
+  if (!state.weekStart) {
+    const thisWeek = mondayOf(today);
+    const hasThisWeek = dates.some((d) => d >= thisWeek && d < addDays(thisWeek, 7));
+    state.weekStart = hasThisWeek ? thisWeek : mondayOf(dates[0]);
   }
-  line.innerHTML = html;
+  const weekStart = state.weekStart;
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const inWeek = events.filter((e) => e.date >= days[0] && e.date <= days[6]);
+
+  // Days before the plan starts (or after it ends) aren't free time — they
+  // aren't part of the plan at all, and shouldn't be offered as buffer.
+  const planStart = (state.plan && state.plan.startDate) || dates[0];
+  const planEnd = (state.plan && state.plan.finishDate) || dates[dates.length - 1];
+  const outOfPlan = (d) => d < planStart || d > planEnd;
+
+  const firstWeek = mondayOf(planStart);
+  const lastWeek = mondayOf(dates[dates.length - 1]);
+  $("wkPrev").disabled = firstWeek >= weekStart;
+  $("wkNext").disabled = lastWeek <= weekStart;
+  // "Today" is a shortcut back, so it is dead weight when you are already there.
+  $("wkToday").disabled = clampWeek(mondayOf(today), firstWeek, lastWeek) === weekStart;
+  $("wkRange").textContent = prettyDate(days[0]) + " – " + prettyDate(days[6]);
+
+  // rows: only the hours this week actually uses
+  const hours = [...new Set(inWeek.map((e) => String(e.startTime || "").slice(0, 2)))].sort();
+  const byCell = {};
+  inWeek.forEach((e) => {
+    const key = e.date + "@" + String(e.startTime || "").slice(0, 2);
+    (byCell[key] = byCell[key] || []).push(e);
+  });
+  const busyDays = new Set(inWeek.map((e) => e.date));
+
+  const grid = $("wkGrid");
+  grid.innerHTML = "";
+  grid.appendChild(el("div", "wk-corner"));
+  const dowNames = t("dow");
+  const dayClass = (d) => (outOfPlan(d) ? " out" : busyDays.has(d) ? "" : " free");
+  days.forEach((d, i) => {
+    const h = el("div", "wk-h" + (d === today ? " today" : "") + dayClass(d));
+    h.innerHTML = `<div class="dow">${esc(dowNames[i])}</div><div class="dnum">${esc(dayNum(d))}</div>`;
+    grid.appendChild(h);
+  });
+
+  hours.forEach((hh) => {
+    grid.appendChild(el("div", "wk-hr", esc(hh + ":00")));
+    days.forEach((d, di) => {
+      const cell = el("div", "wk-cell" + dayClass(d));
+      (byCell[d + "@" + hh] || []).forEach((e) => {
+        const cls = e.status === "done" ? " done" : e.status === "rolled_over" ? " missed" : (e.movedFrom ? " moved" : "");
+        const s = el("div", "sess" + cls);
+        // The grid is visual; spell the same facts out for anyone not seeing it.
+        const parts = [e.title, dowNames[di] + " " + prettyDate(d), e.startTime];
+        if (e.durationMin) parts.push(durText(e.durationMin));
+        parts.push(tg("status", e.status));
+        if (e.movedFrom) parts.push(fmt(t("moved_from"), { d: prettyDate(e.movedFrom) }));
+        const label = parts.join(", ");
+        s.title = label;
+        s.setAttribute("role", "img");
+        s.setAttribute("aria-label", label);
+        s.innerHTML = `<b>${esc(e.title)}</b><span class="dur">${esc(e.startTime)} · ${e.durationMin ? esc(durText(e.durationMin)) : esc(tg("status", e.status))}</span>`;
+        cell.appendChild(s);
+      });
+      grid.appendChild(cell);
+    });
+  });
+
+  const mins = (s) => inWeek.filter(s).reduce((n, e) => n + (e.durationMin || 0), 0);
+  $("wkLoad").innerHTML = fmt(esc(t("wk_load")), {
+    s: `<b>${esc(durText(mins(() => true)))}</b>`,
+    d: `<b>${esc(durText(mins((e) => e.status === "done")))}</b>`,
+  });
+
+  const freeDays = days.map((d, i) => (busyDays.has(d) || outOfPlan(d) ? null : dowNames[i])).filter(Boolean);
+  const startsHere = planStart > days[0] && planStart <= days[6];
+  $("wkHint").textContent = freeDays.length
+    ? fmt(t(freeDays.length === 1 ? "wk_free_one" : "wk_free_many"), { days: freeDays.join(", ") })
+    : startsHere ? fmt(t("wk_starts"), { d: prettyDate(planStart) })
+    : days.every((d) => !outOfPlan(d)) ? t("wk_full") : "";
 }
 
-// ── Rollover ──
+function durText(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  if (!h) return fmt(t("dur_m"), { m });
+  return m ? fmt(t("dur_hm"), { h, m }) : fmt(t("dur_h"), { h });
+}
+function stepWeek(n) {
+  if (!state.weekStart) return;
+  state.weekStart = addDays(state.weekStart, n * 7);
+  renderWeek();
+}
+function clampWeek(w, lo, hi) {
+  return w < lo ? lo : w > hi ? hi : w;
+}
+// Jump back to the current week — or the nearest one the plan actually covers.
+function goToday() {
+  const dates = (state.events || []).map((e) => e.date).sort();
+  if (!dates.length) return;
+  const lo = mondayOf((state.plan && state.plan.startDate) || dates[0]);
+  const hi = mondayOf(dates[dates.length - 1]);
+  state.weekStart = clampWeek(mondayOf(isoToday()), lo, hi);
+  renderWeek();
+}
+
+// ── Rollover (debug) ──
 async function rollover() {
   try {
     const events = (await api("/api/calendar?planId=" + state.planId)) || [];
@@ -912,11 +1550,11 @@ async function rollover() {
     const asOf = addDays(firstDate, 1);
     const r = await api("/api/rollover", { method: "POST", body: JSON.stringify({ userId: state.userId, asOf }) });
 
-    state.plan = await api("/api/plan/" + state.planId);
-    await loadCalendar();
+    await loadPlan(state.planId, { animate: false });
     const res = (r.results || [])[0];
-    showFinish(state.plan.finishDate, !!(res && res.finishShiftDays > 0));
+    const shifted = !!(res && res.finishShiftDays > 0);
     updateSpineFinish(state.plan);
+    updateGoalRail(state.plan, shifted);
 
     const note = $("rollMsg");
     note.hidden = false;
@@ -932,30 +1570,44 @@ async function rollover() {
       msg += " " + t("nothing_roll");
     }
     note.textContent = msg;
-  } catch (e) { alert(e.message); }
+  } catch (e) { toast(errText(e)); }
 }
 
 // ── Dates ──
-function prettyDate(d) {
-  const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt)) return d;
-  const loc = { en: undefined, ru: "ru-RU", uz: "uz-UZ" }[LANG];
-  return dt.toLocaleDateString(loc, { month: "short", day: "numeric" });
+// Schedule dates are date-only calendar values. They are rendered from their
+// own parts through a UTC-pinned formatter, so the day shown is the day the
+// backend sent no matter where the device is — `new Date("2026-09-15")` would
+// shift it west of UTC.
+function ymd(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ""));
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : null;
 }
-function prettyDateFull(d) {
-  const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt)) return d;
+function prettyDate(d) {
+  const p = ymd(d);
+  if (!p) return d;
+  const dt = new Date(Date.UTC(p.y, p.m - 1, p.d));
   const loc = { en: undefined, ru: "ru-RU", uz: "uz-UZ" }[LANG];
-  return dt.toLocaleDateString(loc, { weekday: "long", month: "short", day: "numeric" });
+  return dt.toLocaleDateString(loc, { month: "short", day: "numeric", timeZone: "UTC" });
+}
+function dayNum(d) {
+  const p = ymd(d);
+  return p ? String(p.d) : d;
 }
 function addDays(d, n) {
   const dt = new Date(d + "T00:00:00Z"); // UTC-safe
   dt.setUTCDate(dt.getUTCDate() + n);
   return dt.toISOString().slice(0, 10);
 }
+function daysBetween(a, b) {
+  return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
+}
+function clamp(v, lo, hi) {
+  return Math.min(hi, Math.max(lo, v));
+}
 
-// ── Meter ──
+// ── Meter (debug) ──
 async function refreshMeter() {
+  if (!DEBUG) return;
   try {
     const m = await api("/api/meter");
     const dot = $("meterDot");
@@ -970,24 +1622,150 @@ async function refreshMeter() {
 }
 
 // ── Tabs ──
+const TABS = ["plan", "week", "kit"];
 function switchTab(name) {
-  const order = { plan: 0, calendar: 1, setup: 2 };
-  $("seg").style.setProperty("--i", order[name]);
-  document.querySelectorAll(".seg-btn").forEach((tb) => tb.classList.toggle("active", tb.dataset.tab === name));
+  const i = TABS.indexOf(name);
+  if (i < 0) return;
+  $("seg").style.setProperty("--i", i);
+  document.querySelectorAll(".seg-btn").forEach((tb) => {
+    const on = tb.dataset.tab === name;
+    tb.classList.toggle("active", on);
+    tb.setAttribute("aria-selected", String(on));
+    tb.tabIndex = on ? 0 : -1;
+  });
   document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("active", p.id === "pane-" + name));
+  if (name === "week") renderWeek();
+}
+function focusTab(name) {
+  switchTab(name);
+  const btn = document.querySelector(`.seg-btn[data-tab="${name}"]`);
+  if (btn) btn.focus();
 }
 
 // ── Wire up ──
 document.querySelectorAll(".seg-btn").forEach((tb) => (tb.onclick = () => switchTab(tb.dataset.tab)));
+$("seg").addEventListener("keydown", (e) => {
+  const cur = TABS.indexOf(document.querySelector(".seg-btn.active").dataset.tab);
+  if (e.key === "ArrowRight") focusTab(TABS[(cur + 1) % TABS.length]);
+  else if (e.key === "ArrowLeft") focusTab(TABS[(cur - 1 + TABS.length) % TABS.length]);
+  else if (e.key === "Home") focusTab(TABS[0]);
+  else if (e.key === "End") focusTab(TABS[TABS.length - 1]);
+  else return;
+  e.preventDefault();
+});
+
 document.querySelectorAll("#langSwitch button").forEach((b) => (b.onclick = () => setLang(b.dataset.lang)));
 $("themeToggle").onclick = toggleTheme;
+$("dockToggle").onclick = () => setDock(!dockIsOpen());
 $("composer").addEventListener("submit", (e) => { e.preventDefault(); send(); });
 $("input").addEventListener("input", () => { $("sendBtn").disabled = busy || !$("input").value.trim(); });
 $("scheduleBtn").onclick = schedule;
+$("emptyScheduleBtn").onclick = schedule;
 $("confirmBtn").onclick = confirmSchedule;
 $("rolloverBtn").onclick = rollover;
+$("wkPrev").onclick = () => stepWeek(-1);
+$("wkNext").onclick = () => stepWeek(1);
+$("wkToday").onclick = goToday;
 
-// init: reflect saved language, then boot (which mints the session)
-document.querySelectorAll("#langSwitch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === LANG));
+// ── Sidebar wiring ──
+$("newChatBtn").onclick = startNewChat;
+$("sbCollapse").onclick = () => { setSidebar(false); $("sbOpen").focus(); };
+$("sbOpen").onclick = () => { setSidebar(true); $("sbSearch").focus(); };
+$("sbScrim").onclick = () => setSidebar(false);
+$("sbSearch").addEventListener("input", renderChatList);
+$("sbSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && $("sbSearch").value) { e.stopPropagation(); $("sbSearch").value = ""; renderChatList(); }
+});
+$("sbMenu").querySelectorAll("[data-act]").forEach((b) => {
+  b.onclick = () => {
+    const id = menuFor;
+    closeChatMenu();
+    if (!id) return;
+    if (b.dataset.act === "rename") { renaming = id; renderChatList(); }
+    else deleteChat(id);
+  };
+});
+// ── Account + settings wiring ──
+$("acctBtn").onclick = () => setAcctMenu(!acctOpen);
+$("acctMenu").querySelectorAll("[data-act]").forEach((b) => {
+  b.onclick = () => {
+    const act = b.dataset.act;
+    setAcctMenu(false);
+    if (act === "reset") { openSettings("data"); askConfirm("ask_reset", resetAppData); }
+    else openSettings(act === "settings" ? null : act === "shortcuts" ? "shortcuts" : act);
+  };
+});
+$("setClose").onclick = closeSettings;
+$("settings").addEventListener("pointerdown", (e) => { if (e.target === $("settings")) closeSettings(); });
+$("setName").addEventListener("change", () => {
+  const v = $("setName").value.trim();
+  if (v) lsSet("startai_name", v); else lsDel("startai_name");
+  syncAccount();
+  toast(t("done_saved"), "ok");
+});
+$("themePick").querySelectorAll("button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.themePref)));
+$("langPick").querySelectorAll("button").forEach((b) => (b.onclick = () => { setLang(b.dataset.lang); syncSettings(); syncAccount(); }));
+$("clearChatsBtn").onclick = () => askConfirm("ask_clear", clearAllChats);
+$("resetBtn").onclick = () => askConfirm("ask_reset", resetAppData);
+$("setConfirmNo").onclick = hideConfirm;
+$("setConfirmYes").onclick = () => { const go = confirmAction; hideConfirm(); if (go) go(); };
+
+// Keep focus inside the dialog while it owns the screen.
+$("settings").addEventListener("keydown", (e) => {
+  if (e.key !== "Tab") return;
+  const f = [...$("settings").querySelectorAll("button,input,[tabindex]:not([tabindex='-1'])")]
+    .filter((n) => !n.disabled && n.offsetParent !== null);
+  if (!f.length) return;
+  const first = f[0];
+  const last = f[f.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+// A popover closes when you look away from it.
+document.addEventListener("pointerdown", (e) => {
+  if (!$("sbMenu").hidden && !e.target.closest("#sbMenu") && !e.target.closest(".sb-item-menu")) closeChatMenu();
+  if (acctOpen && !e.target.closest("#acctMenu") && !e.target.closest("#acctBtn")) setAcctMenu(false);
+});
+
+// ── Keyboard shortcuts ──
+document.addEventListener("keydown", (e) => {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  const k = e.key.toLowerCase();
+  if (k === "k") { e.preventDefault(); if (!sidebarOpen) setSidebar(true); $("sbSearch").focus(); $("sbSearch").select(); }
+  else if (k === "b") { e.preventDefault(); setSidebar(!sidebarOpen); }
+  else if (k === "o" && e.shiftKey) { e.preventDefault(); startNewChat(); }
+});
+window.addEventListener("resize", () => {
+  // Coming back to a wide window should not leave the drawer state stranded.
+  if (window.innerWidth > 940) setSidebar(lsGet("startai_sidebar") !== "0");
+  closeChatMenu();
+});
+
+// Escape steps back out of whatever is layered on top: menu, then drawer, then
+// the conversation dock.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!$("settings").hidden) { if (confirmAction) hideConfirm(); else closeSettings(); return; }
+  if (acctOpen) { setAcctMenu(false); $("acctBtn").focus(); return; }
+  if (!$("sbMenu").hidden) { closeChatMenu(); return; }
+  if (window.innerWidth <= 940 && sidebarOpen) { setSidebar(false); $("sbOpen").focus(); return; }
+  if (document.body.dataset.stage !== "plan" || !dockIsOpen()) return;
+  setDock(false);
+  $("dockToggle").focus();
+});
+
+// init: reflect saved language, reveal debug tooling only when asked, then boot
+syncLangButtons();
+if (DEBUG) { $("meter").hidden = false; $("rolloverBtn").hidden = false; }
+setStage("intake");
 applyI18n();
+syncAccount();
+// "System" keeps following the OS after the choice, so listen for the switch.
+(function () {
+  const mq = matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => { if (themePref() === "system") applyTheme("system"); };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+})();
 boot();
