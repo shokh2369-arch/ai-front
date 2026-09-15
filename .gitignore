@@ -1,0 +1,18 @@
+# Runtime state written by the Go backend
+data/
+*.log
+
+# Secrets — never commit; .env.example documents the shape instead
+.env
+.env.*
+!.env.example
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Not used by this project (no build step), but cheap insurance
+node_modules/
