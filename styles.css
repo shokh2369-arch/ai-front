@@ -605,6 +605,34 @@ body[data-stage="plan"] .chat{ grid-area:chat; }
   background:var(--violet-100); color:var(--violet-ink); padding:2px 7px; border-radius:5px;
 }
 .todo-prog{ margin-left:auto; font-variant-numeric:tabular-nums; }
+
+/* A series, not a checkbox: a progress track plus a button that logs exactly
+   one session. Nothing here can cancel the whole series. */
+.series-bar{ flex:1; max-width:120px; height:4px; border-radius:2px; background:var(--line); overflow:hidden; }
+.series-bar i{ display:block; height:100%; background:var(--green); border-radius:2px; transition:width .3s var(--ease); }
+.log-btn{
+  width:21px; height:21px; padding:0; border-radius:7px; cursor:pointer;
+  border:2px solid var(--violet-200); background:var(--surface); color:var(--violet);
+  display:flex; align-items:center; justify-content:center;
+  transition:background .14s, border-color .14s, color .14s;
+}
+.log-btn:hover{ background:var(--violet); border-color:var(--violet); color:#fff; }
+.todo.done .check .box{ background:var(--green); border-color:var(--green); color:#fff; }
+.td-state{
+  font-family:var(--font-body); font-size:10px; font-weight:700;
+  letter-spacing:.06em; text-transform:uppercase; padding:1px 6px; border-radius:5px;
+  background:var(--line-2); color:var(--muted);
+}
+.td-state[data-s="in_progress"]{ background:var(--violet-100); color:var(--violet-ink); }
+.td-state[data-s="done"]{ background:var(--green-100); color:var(--green); }
+
+/* Indeterminate: the interview ends when it has enough, not at a fixed count. */
+.tn-bar.indeterminate i{ width:40%; animation:tn-slide 1.4s var(--ease) infinite; }
+@keyframes tn-slide{ 0%{ transform:translateX(-100%); } 100%{ transform:translateX(250%); } }
+
+.toast-ref{ width:100%; font-size:11.5px; color:var(--muted); }
+.toast-ref summary{ cursor:pointer; }
+.toast-ref code{ font-family:var(--font-mono); font-size:11px; }
 .todo.is-today{ border-bottom-color:var(--line); }
 .todo-meta{ font-family:var(--font-mono); font-size:11.5px; color:var(--muted); margin-top:4px; display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; }
 .todo-meta .ph{ font-family:var(--font-body); font-size:11px; font-weight:600; letter-spacing:.05em; text-transform:uppercase; color:var(--faint); }
@@ -701,6 +729,10 @@ body[data-stage="plan"] .chat{ grid-area:chat; }
 .sess.missed{ border-left-color:var(--rose); background:var(--rose-100); }
 .sess.missed b{ color:var(--rose); text-decoration:line-through; }
 .sess.missed .dur{ color:var(--rose); }
+/* Proposed sessions are not settled yet: dashed edge and a lighter ground say
+   so without relying on colour alone. */
+.sess.proposed{ border-left-style:dashed; background:var(--surface-2); }
+.sess.proposed b{ color:var(--ink-2); }
 .sess.moved{ border-left-color:var(--honey); background:var(--honey-100); }
 .sess.moved b{ color:var(--honey); }
 .sess.moved .dur{ color:var(--honey); }

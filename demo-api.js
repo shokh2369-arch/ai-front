@@ -4,6 +4,13 @@
 // demoMode. It is a UI fixture and never a fallback for a failed live call.
 // It answers with the same response shape as the real backend.
 
+// The fixture fails the way the real API fails: a code, not a sentence.
+function demoErr(code) {
+  const e = new Error(code);
+  e.code = code;
+  return e;
+}
+
 const DEMO_DB = {
   plans: {},
   calendars: {},
@@ -316,7 +323,9 @@ function planForMessage(message, profile = {}) {
     durationMin: td.durationMin,
     frequency: td.frequency,
     phase: td.phase,
-    status: "proposed",
+    status: "pending",
+    plannedCount: 0,
+    completedCount: 0,
   }));
   const setupItems = bp.setup;
 
@@ -380,11 +389,13 @@ function buildSchedule(plan, start) {
     for (let w = 0; w < weeks; w += 1) {
       offsets.forEach((off) => {
         events.push({
+          id: uid("evt"),
           date: addDays(start, w * 7 + off),
           startTime: String(hourFor[td.id]).padStart(2, "0") + ":00",
           title: td.title,
-          // Nothing is done before it has happened.
-          status: "scheduled",
+          // Proposed until /api/schedule/confirm promotes it, like the server.
+          status: "proposed",
+          rolledOver: 0,
           durationMin: td.durationMin, priority: td.priority, todoId: td.id,
         });
       });
@@ -397,6 +408,12 @@ function buildSchedule(plan, start) {
 function scheduleForPlan(plan) {
   const start = addDays(isoToday(), 1);
   DEMO_DB.calendars[plan.id] = buildSchedule(plan, start);
+  const evs = DEMO_DB.calendars[plan.id];
+  plan.todos = (plan.todos || []).map((td) => ({
+    ...td,
+    plannedCount: evs.filter((e) => e.todoId === td.id).length,
+    completedCount: evs.filter((e) => e.todoId === td.id && e.status === "done").length,
+  }));
   plan.startDate = start;
   // The last booked day *is* the finish date: the plan spans what it schedules.
   plan.finishDate = addDays(start, (plan.weeksTotal || 10) * 7 - 1);
@@ -432,7 +449,7 @@ async function mockApi(path, opts = {}) {
         assistant: intakeText()["ask" + key],
         options: intakeText(step),
         stage: "intake",
-        progress: { answered: DEMO_DB.intake.answered, max: DEMO_INTAKE_MAX },
+        progress: { answered: DEMO_DB.intake.answered, max: DEMO_INTAKE_MAX, adaptive: true },
       }, extra || {});
     };
     // Advance through any questions this goal has already answered.
@@ -451,7 +468,7 @@ async function mockApi(path, opts = {}) {
         options: [],
         planId: plan.id,
         stage: "plan_ready",
-        progress: { answered: DEMO_INTAKE_MAX, max: DEMO_INTAKE_MAX },
+        done: true,
       };
     };
 
@@ -463,7 +480,7 @@ async function mockApi(path, opts = {}) {
           assistant: intakeText().askWhich,
           options: choices,
           stage: "disambiguation",
-          progress: { answered: 0, max: DEMO_INTAKE_MAX },
+          progress: { answered: 0, max: DEMO_INTAKE_MAX, adaptive: true },
         };
       }
       DEMO_DB.intake = { goal: msg, answered: 0, ...presetFromGoal(msg) };
@@ -485,31 +502,47 @@ async function mockApi(path, opts = {}) {
   if (path.indexOf("/api/plan/") === 0 && (opts.method || "GET") === "GET") {
     const planId = path.split("/api/plan/")[1];
     const plan = DEMO_DB.plans[planId];
-    if (!plan) throw new Error("Plan not found");
+    if (!plan) throw demoErr("PLAN_NOT_FOUND");
     return JSON.parse(JSON.stringify(plan));
   }
 
   if (path === "/api/todo/complete" && (opts.method || "GET") === "POST") {
     const plan = DEMO_DB.plans[body.planId];
-    if (!plan) throw new Error("Plan not found");
-    // Completing a task means one session happened, so the Week grid and the
-    // Plan tab cannot drift apart — and it can be undone.
-    const done = body.done !== false;
-    const date = body.date || isoToday();
-    const hit = (DEMO_DB.calendars[plan.id] || []).find((e) => e.todoId === body.todoId && e.date === date);
-    if (hit) hit.status = done ? "done" : "scheduled";
-    plan.todos = (plan.todos || []).map((td) => (td.id === body.todoId ? { ...td, status: done ? "done" : "proposed" } : td));
-    return { ok: true };
+    if (!plan) throw demoErr("PLAN_NOT_FOUND");
+    const cal = DEMO_DB.calendars[plan.id] || [];
+    const mine = cal.filter((e) => e.todoId === body.todoId);
+    if (!mine.length) throw demoErr("TODO_NOT_FOUND");
+    // One session of the series, named by eventId when the caller knows it.
+    const hit = (body.eventId && mine.find((e) => e.id === body.eventId && e.status !== "done"))
+      || mine.find((e) => e.status !== "done");
+    if (!hit) throw demoErr("EVENT_NOT_FOUND");
+    hit.status = "done";
+    const completedCount = mine.filter((e) => e.status === "done").length;
+    const plannedCount = mine.length;
+    const status = completedCount >= plannedCount ? "done" : "in_progress";
+    plan.todos = (plan.todos || []).map((td) => (
+      td.id === body.todoId ? { ...td, status, completedCount, plannedCount } : td));
+    return { ok: true, todoId: body.todoId, status, completedCount, plannedCount, remaining: plannedCount - completedCount };
   }
 
   if (path === "/api/schedule" && (opts.method || "GET") === "POST") {
     const plan = DEMO_DB.plans[body.planId];
-    if (!plan) throw new Error("Plan not found");
-    return scheduleForPlan(plan);
+    if (!plan) throw demoErr("PLAN_NOT_FOUND");
+    const r = scheduleForPlan(plan);
+    const events = DEMO_DB.calendars[plan.id] || [];
+    return {
+      planId: plan.id, startDate: r.startDate, finishDate: r.finishDate,
+      events, count: events.length,
+      droppedSessions: 0, missesDeadline: false, deadlineSlipDays: 0, deadlineNote: "",
+    };
   }
 
   if (path === "/api/schedule/confirm" && (opts.method || "GET") === "POST") {
-    return { ok: true };
+    const plan = DEMO_DB.plans[body.planId];
+    if (!plan) throw demoErr("PLAN_NOT_FOUND");
+    const cal = DEMO_DB.calendars[plan.id] || [];
+    cal.forEach((e) => { if (e.status === "proposed") e.status = "scheduled"; });
+    return { planId: plan.id, confirmed: cal.length, total: cal.length, finishDate: plan.finishDate };
   }
 
   if (path.indexOf("/api/calendar") === 0 && (opts.method || "GET") === "GET") {

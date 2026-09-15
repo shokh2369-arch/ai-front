@@ -97,6 +97,9 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" s
 const WARN_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
 // Drawn on the same 24-unit stroke grid as every other icon here.
 const FLAG_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 21V4M6 4h11l-2.2 3.5L17 11H6"/></svg>';
+// A plus, not a tick: this adds one completed session to a series, it does
+// not mark the whole thing done.
+const PLUS_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>';
 
 function uid(prefix) {
@@ -134,16 +137,27 @@ function lower(s) {
 // The client understands stable codes, not prose. Server text is shown only
 // when it arrives in the agreed {error:{code,message}} shape AND survives the
 // guard below — never a raw body, HTML page, stack trace or provider payload.
+// Codes are the contract; status alone and message text are not. An unknown
+// code deliberately falls through to the generic message rather than being
+// guessed at from its HTTP status.
 const ERR_TEXT = {
   NETWORK: "err_network",
   AI_UNAVAILABLE: "err_ai_unavailable",
-  RATE_LIMITED: "err_rate_limited",
+  AI_RATE_LIMITED: "err_rate_limited",
+  DAILY_QUOTA_EXCEEDED: "err_quota",
+  SPEND_CAP_REACHED: "err_spend_cap",
   UNAUTHORIZED: "err_unauthorized",
-  FORBIDDEN: "err_unauthorized",
-  NOT_FOUND: "err_not_found",
-  INVALID_INPUT: "err_invalid",
+  SESSION_NOT_FOUND: "err_unauthorized",
+  PLAN_NOT_FOUND: "err_plan_gone",
+  TODO_NOT_FOUND: "err_stale",
+  EVENT_NOT_FOUND: "err_stale",
+  SCHEDULE_CONFLICT: "err_stale",
+  INVALID_REQUEST: "err_generic_safe",
+  INTERNAL_ERROR: "err_server",
   SERVER_ERROR: "err_server",
 };
+// Worth offering a retry button for; the rest are either automatic or final.
+const RETRYABLE = { NETWORK: 1, AI_UNAVAILABLE: 1, AI_RATE_LIMITED: 1, INTERNAL_ERROR: 1, SERVER_ERROR: 1 };
 
 function apiErr(code, safeMessage, status) {
   const e = new Error(code);
@@ -166,19 +180,25 @@ function isSafeMessage(s) {
   return true;
 }
 
+// `error` is an object: {code, message, ref?}. A bare string is the old shape
+// and is ignored rather than displayed. Status is only a last resort when no
+// code arrives at all.
 async function readError(res) {
-  const byStatus = { 400: "INVALID_INPUT", 401: "UNAUTHORIZED", 403: "FORBIDDEN", 404: "NOT_FOUND", 429: "RATE_LIMITED" };
-  let code = byStatus[res.status] || (res.status >= 500 ? "SERVER_ERROR" : "REQUEST_FAILED");
+  let code = res.status >= 500 ? "INTERNAL_ERROR" : "REQUEST_FAILED";
   let safe = null;
+  let ref = null;
   try {
     const body = await res.json();
     const err = body && body.error;
-    if (err && typeof err === "object") {
+    if (err && typeof err === "object" && !Array.isArray(err)) {
       if (typeof err.code === "string" && /^[A-Z][A-Z0-9_]{1,39}$/.test(err.code)) code = err.code;
       if (isSafeMessage(err.message)) safe = err.message.trim();
+      if (typeof err.ref === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(err.ref)) ref = err.ref;
     }
   } catch (_) { /* non-JSON body (HTML page, empty, truncated): discarded on purpose */ }
-  return apiErr(code, safe, res.status);
+  const e = apiErr(code, safe, res.status);
+  if (ref) e.ref = ref;
+  return e;
 }
 
 // What the user actually reads. Localized copy wins over server prose so the
@@ -186,16 +206,37 @@ async function readError(res) {
 function errText(e) {
   const key = e && e.code && ERR_TEXT[e.code];
   if (key) return t(key);
-  if (e && e.safeMessage) return e.safeMessage;
+  // Unknown code: treat as a generic failure rather than guessing a meaning.
   return t("err_generic_safe");
 }
 
-async function api(path, opts = {}) {
-  if (DEMO_MODE) return mockApi(path, opts);
+// Some failures mean local state has gone stale rather than something broke.
+// Repair what we can before telling the user anything.
+async function handleApiError(e) {
+  if (!e) return;
+  if (e.code === "PLAN_NOT_FOUND") {
+    // The plan this device remembers no longer exists on the server.
+    const c = activeChat();
+    if (c) { c.planId = null; c.plan = null; c.cal = null; saveHistory(); renderChatList(); }
+    state.planId = null; state.plan = null; state.events = [];
+    resetWorkspace();
+  } else if ((e.code === "TODO_NOT_FOUND" || e.code === "EVENT_NOT_FOUND" || e.code === "SCHEDULE_CONFLICT") && state.planId) {
+    try { await loadPlan(state.planId, { animate: false }); } catch (_) { /* reported below */ }
+  }
+  toast(errText(e), undefined, undefined, e.ref);
+}
+
+// The server keeps sessions on disk and its filesystem does not survive a
+// deploy or a free-tier spin-down. A restart must be invisible: when the
+// session it is holding has evaporated, get a new one and replay the call.
+const RECOVERABLE = { SESSION_NOT_FOUND: 1, UNAUTHORIZED: 1 };
+// Two codes mean "stop asking". Retrying them wastes the user's time and,
+// for the spend cap, somebody's money.
+const NEVER_RETRY = { DAILY_QUOTA_EXCEEDED: 1, SPEND_CAP_REACHED: 1 };
+
+async function rawApi(path, opts) {
   const headers = { "Content-Type": "application/json" };
-  // The backend issues a session token and rejects everything else with 401.
   if (state.token) headers.Authorization = "Bearer " + state.token;
-  if (state.userId) headers["X-User-Id"] = state.userId;
   let res;
   try {
     res = await fetch(API + path, { headers, ...opts });
@@ -209,6 +250,29 @@ async function api(path, opts = {}) {
   } catch (_) {
     throw apiErr("BAD_RESPONSE");
   }
+}
+
+async function api(path, opts = {}) {
+  if (DEMO_MODE) return mockApi(path, opts);
+  try {
+    return await rawApi(path, opts);
+  } catch (e) {
+    if (!RECOVERABLE[e.code] || NEVER_RETRY[e.code] || path === "/api/session") throw e;
+    // One attempt only — a second failure is a real error, not a stale session.
+    await newSession();
+    return rawApi(path, withSession(opts));
+  }
+}
+
+// The replayed call has to carry the *new* sessionId, not the dead one.
+function withSession(opts) {
+  if (!opts || !opts.body || !state.sessionId) return opts;
+  try {
+    const body = JSON.parse(opts.body);
+    if (!Object.prototype.hasOwnProperty.call(body, "sessionId")) return opts;
+    body.sessionId = state.sessionId;
+    return { ...opts, body: JSON.stringify(body) };
+  } catch (_) { return opts; }
 }
 
 // ── Stage ──
@@ -243,11 +307,18 @@ function dockIsOpen() {
 
 // ── Toasts ──
 // Errors belong inside the design, not in an OS dialog.
-function toast(message, kind, action) {
+function toast(message, kind, action, ref) {
   const box = $("toasts");
   const node = el("div", "toast" + (kind === "ok" ? " ok" : ""));
   node.innerHTML = `<b>${esc(kind === "ok" ? "" : t("err_title"))}</b><span class="toast-msg">${esc(message)}</span>`;
   if (kind === "ok") node.querySelector("b").remove();
+  // A support reference is for correlation, not for reading. It stays folded
+  // away unless someone goes looking for it.
+  if (ref) {
+    const d = el("details", "toast-ref");
+    d.innerHTML = `<summary>${esc(t("err_details"))}</summary><code>${esc(fmt(t("err_ref"), { ref }))}</code>`;
+    node.appendChild(d);
+  }
   // Something destructive should offer the way back, in the same breath.
   if (action) {
     const b = el("button", "toast-act", esc(action.label));
@@ -307,13 +378,15 @@ const STAGE_LABEL = { scope_check: "stage_scope", disambiguation: "stage_disambi
 function turnState(turn) {
   if (!turn || typeof turn !== "object") return null;
   const p = turn.progress;
+  // `progress` is absent outside intake, and absent means "not applicable" —
+  // not zero. `max` is a ceiling the adaptive interview usually stops short of,
+  // so it is never rendered as a total or a percentage.
   const answered = p && Number.isFinite(p.answered) && p.answered >= 0 ? Math.floor(p.answered) : null;
-  const max = p && Number.isFinite(p.max) && p.max > 0 ? Math.floor(p.max) : null;
   const stage = typeof turn.stage === "string" ? turn.stage : null;
   // The interview is over once a plan exists; progress stops being news.
   if (stage === "plan_ready") return null;
   if (answered == null && !STAGE_LABEL[stage]) return null;
-  return { stage, answered, max };
+  return { stage, answered, question: typeof turn.question === "string" ? turn.question : null };
 }
 
 function renderTurnState(st) {
@@ -331,18 +404,16 @@ function renderTurnState(st) {
     return;
   }
   if (st.answered != null) {
-    // Never "step 3 of 5" — the backend cannot promise a total it may not reach.
-    text.textContent = fmt(t("intake_progress"), { n: st.answered });
-    if (st.max) {
-      bar.hidden = false;
-      $("trayFill").style.width = (clamp(st.answered / st.max, 0, 1) * 100).toFixed(0) + "%";
-      bar.setAttribute("aria-valuenow", String(st.answered));
-      bar.setAttribute("aria-valuemax", String(st.max));
-      bar.setAttribute("aria-label", t("aria_progress"));
-      bar.setAttribute("aria-valuetext", fmt(t("intake_progress"), { n: st.answered }));
-    } else {
-      bar.hidden = true;
-    }
+    // You are ON question N+1, having answered N. The bar is indeterminate:
+    // the interview stops when it has enough, which is usually early.
+    const n = st.answered + 1;
+    text.textContent = fmt(t("intake_question_n"), { n });
+    bar.hidden = false;
+    bar.classList.add("indeterminate");
+    bar.removeAttribute("aria-valuenow");
+    bar.removeAttribute("aria-valuemax");
+    bar.setAttribute("aria-label", t("aria_progress"));
+    bar.setAttribute("aria-valuetext", fmt(t("intake_question_n"), { n }));
     return;
   }
 }
@@ -592,7 +663,7 @@ async function openChat(id) {
       setDock(false);
       switchTab("plan");
     } catch (e) {
-      toast(errText(e));
+      handleApiError(e);
     }
   }
   scrollChat();
@@ -873,16 +944,31 @@ async function resetAppData() {
 }
 
 // ── Bootstrap ──
+// Creating a session is the one call that needs no auth, and the only one that
+// ever hands back a token. The token cannot be re-fetched, so it is persisted:
+// it is the sole handle on this user's plans, and losing it orphans them.
+async function newSession() {
+  // Through api(), so demo mode is served by the fixture. The recovery path
+  // in api() skips /api/session, so this cannot recurse.
+  const r = await api("/api/session", {
+    method: "POST",
+    body: JSON.stringify({ timezone: browserTimezone(), lang: LANG, name: lsGet("startai_name") || undefined }),
+  });
+  state.userId = r.userId;
+  state.sessionId = r.sessionId;
+  if (r.token) { state.token = r.token; lsSet("startai_token", r.token); }
+  if (typeof r.timezone === "string" && r.timezone) state.timezone = r.timezone;
+  lsSet("startai_uid", r.userId);
+  lsSet("startai_session", r.sessionId);
+  return r;
+}
+
 async function ensureSession(greet) {
   try {
-    const saved = lsGet("startai_uid") || "";
-    const r = await api("/api/session", { method: "POST", body: JSON.stringify({ userId: saved, lang: LANG }) });
-    state.userId = r.userId;
-    state.sessionId = r.sessionId;
-    if (r.token) state.token = r.token;
-    // The backend owns the scheduling timezone.
-    if (typeof r.timezone === "string" && r.timezone) state.timezone = r.timezone;
-    lsSet("startai_uid", r.userId);
+    // A stored token keeps the same user across reloads; the server refreshes
+    // its timezone from this call.
+    state.token = lsGet("startai_token") || null;
+    const r = await newSession();
     if (greet) {
       if (r.assistant) { addMsg(r.assistant, "ai"); logMsg(r.assistant, "ai", ""); }
       setChips(t("starters"));
@@ -903,8 +989,11 @@ async function boot() {
   renderChatList();
   const c = activeChat();
   if (c && ((c.messages && c.messages.length) || c.planId)) {
-    await openChat(c.id);
+    // The session has to exist before anything fetches a plan: an
+    // unauthenticated read would 401, recover into a *new* user, and then
+    // look like the plan had vanished.
     await ensureSession(false);
+    await openChat(c.id);
     return;
   }
   if (c) {
@@ -937,16 +1026,17 @@ async function send(text) {
       body: JSON.stringify({ userId: state.userId, sessionId: state.sessionId, message: msg, lang: LANG }),
     });
     typing.remove();
-    const tone = turn.stage === "out_of_scope" ? "declined" : "";
-    addMsg(turn.assistant, "ai", tone);
-    logMsg(turn.assistant, "ai", tone);
+    // out_of_scope is a normal conversational turn — a redirect back to
+    // learning goals — not a failure, so it is never styled as one.
+    addMsg(turn.assistant, "ai");
+    logMsg(turn.assistant, "ai", "");
     setChips(turn.options);
     persistChips(turn.options);
     const st = turnState(turn);
     renderTurnState(st);
     const c = activeChat();
     if (c) c.turnState = st;
-    if (turn.planId) {
+    if (turn.stage === "plan_ready" && turn.planId) {
       await loadPlan(turn.planId);
       setStage("plan");
       setDock(false);
@@ -997,8 +1087,10 @@ function sessionStats() {
     const s = by[key] || (by[key] = { total: 0, done: 0, today: null, next: null });
     s.total += 1;
     if (e.status === "done") s.done += 1;
-    if (e.date === today && !s.today) s.today = e;
+    if (e.date === today && e.status !== "done" && !s.today) s.today = e;
     if (e.date > today && (!s.next || e.date < s.next)) s.next = e.date;
+    // The next session still open, so "log one" always has a target.
+    if (e.status !== "done" && (!s.nextEvent || e.date < s.nextEvent.date)) s.nextEvent = e;
   });
   return by;
 }
@@ -1055,14 +1147,20 @@ function buildIcs(plan, events) {
 }
 
 // The plan's own metadata, split back out of the headline it was welded into.
+// Read from what the API actually sends. `path` is empty on real plans, so the
+// old habit of splitting it out of a headline yields nothing.
 function planFacts(p) {
   const tail = String(p.path || "").split(" · ");
+  const days = Array.isArray(p.days) ? p.days : null;
   return {
-    track: p.track || tail[0] || "",
-    level: p.level || tail[1] || "",
+    track: p.track || (p.path ? tail[0] : "") || "",
+    level: p.level || "",
     budget: p.budget != null ? p.budget : null,
-    dailyMin: p.dailyMin || parseInt(tail[2], 10) || 0,
+    dailyMin: p.dailyMin || 0,
+    hoursPerWeek: Number.isFinite(p.hoursPerWeek) ? p.hoursPerWeek : null,
+    days,
     weeks: p.weeksTotal || 0,
+    timezone: p.timezone || null,
   };
 }
 function sessionsPerWeek(p) {
@@ -1086,8 +1184,14 @@ function renderGoalBand(p) {
   if (f.level) chip(t("chip_level"), tg("lvl", f.level), false);
   if (f.budget != null) chip(t("chip_budget"), f.budget === 0 ? t("budget_free") : "≤$" + f.budget, f.budget !== 0);
   if (f.dailyMin) chip(t("chip_daily"), fmt(t("per_day"), { n: f.dailyMin }), true);
+  if (f.hoursPerWeek) chip(t("chip_weekly"), fmt(t("hours_n"), { n: f.hoursPerWeek }), true);
+  if (f.days && f.days.length) chip(t("chip_days"), f.days.join(" "), false);
   if (f.weeks) chip(t("chip_span"), fmt(t("weeks_n"), { n: f.weeks }), true);
-  chip(t("chip_load"), fmt(t("per_week"), { n: sessionsPerWeek(p) }), true);
+  // Sessions come from the server's calendar once it exists; the todo
+  // frequencies are only a stand-in before scheduling.
+  const perWeek = (state.events && state.events.length && f.weeks)
+    ? Math.round(state.events.length / f.weeks) : sessionsPerWeek(p);
+  chip(t("chip_load"), fmt(t("per_week"), { n: perWeek }), true);
 
   updateGoalRail(p, false);
 }
@@ -1226,40 +1330,56 @@ function renderPlan(p) {
 // One task row. These tasks recur, so the checkbox means "today's session is
 // done" — it appears only on days the task is actually on, and it can be
 // unticked. A running count keeps the long game visible.
+// A todo is a recurring SERIES, not a checkbox. The server tracks how many of
+// its sessions are done; completing marks exactly one of them and cannot be
+// undone, so this offers "log the next session", never a toggle that would
+// appear to cancel the whole series.
 function todoRow(td, i, st) {
-  const today = st && st.today;
-  const isDone = !!(today && today.status === "done");
-  const row = el("div", "todo" + (isDone ? " done" : "") + (today ? " is-today" : ""));
-  if (animateRows) row.style.animationDelay = Math.min(i * 0.04, 0.4) + "s";
-  const cbId = "cb-" + td.id;
+  const planned = Number.isFinite(td.plannedCount) && td.plannedCount > 0
+    ? td.plannedCount : (st ? st.total : 0);
+  const completed = Number.isFinite(td.completedCount) ? td.completedCount : (st ? st.done : 0);
+  const status = td.status || (completed >= planned && planned > 0 ? "done" : "pending");
+  const allDone = planned > 0 && completed >= planned;
+  // Only a session that is actually on the calendar can be logged.
+  const target = st && (st.today || st.nextEvent);
+  const canLog = !!target && !allDone;
 
-  const check = el("span", "check" + (today ? "" : " idle"));
-  if (today) {
-    check.innerHTML = `<input type="checkbox" id="${esc(cbId)}"${isDone ? " checked" : ""}><span class="box">${CHECK_SVG}</span>`;
-    check.querySelector("input").onchange = (e) => toggleTodo(td.id, today.date, e.target.checked);
+  const row = el("div", "todo series" + (allDone ? " done" : "") + (st && st.today ? " is-today" : ""));
+  if (animateRows) row.style.animationDelay = Math.min(i * 0.04, 0.4) + "s";
+
+  const check = el("span", "check" + (canLog ? "" : " idle"));
+  if (canLog) {
+    const btn = el("button", "log-btn", PLUS_SVG);
+    btn.type = "button";
+    btn.title = t("log_session");
+    btn.setAttribute("aria-label", fmt(t("aria_log_session"), { title: td.title }));
+    btn.onclick = () => completeSession(td.id, target.id, target.date);
+    check.appendChild(btn);
   } else {
-    check.innerHTML = `<span class="box"></span>`;
+    check.innerHTML = `<span class="box">${allDone ? CHECK_SVG : ""}</span>`;
   }
 
-  const title = today
-    ? `<label class="t" for="${esc(cbId)}">${esc(td.title)}</label>`
-    : `<span class="t">${esc(td.title)}</span>`;
-  const sched = st
+  const pct = planned ? Math.round((completed / planned) * 100) : 0;
+  const sched = planned
     ? `<div class="todo-sched">
-         ${today
+         ${st && st.today
            ? `<span class="tag-today">${esc(t("today_tag"))}</span>`
-           : st.next ? `<span>${esc(fmt(t("next_on"), { d: prettyDate(st.next) }))}</span>` : "<span></span>"}
-         <span class="todo-prog">${esc(fmt(t("sess_done_of"), { d: st.done, n: st.total }))}</span>
+           : st && st.next ? `<span>${esc(fmt(t("next_on"), { d: prettyDate(st.next) }))}</span>` : "<span></span>"}
+         <span class="series-bar" role="img" aria-label="${esc(fmt(t("sess_done_of"), { d: completed, n: planned }))}">
+           <i style="width:${pct}%"></i>
+         </span>
+         <span class="todo-prog">${esc(fmt(t("sess_done_of"), { d: completed, n: planned }))}</span>
        </div>`
     : "";
 
   const body = el("div", "todo-body");
   body.innerHTML =
-    `${title}
+    `<span class="t">${esc(td.title)}</span>
      <div class="todo-meta">
        <span class="weight" role="img" data-w="${esc(td.priority)}" aria-label="${esc(tg("prio", td.priority))}"><i></i><i></i><i></i></span>
        <span>${td.durationMin} ${esc(t("min"))}</span>
        <span>${esc(tg("freq", td.frequency))}</span>
+       <span class="td-state" data-s="${esc(status)}">${esc(tg("tstatus", status))}</span>
        ${td.phase ? `<span class="ph">${esc(td.phase)}</span>` : ""}
      </div>
      ${sched}`;
@@ -1337,29 +1457,54 @@ function renderKit(items, budget) {
   box.appendChild(foot);
 }
 
-async function toggleTodo(todoId, date, done) {
+// Completes exactly ONE session of a series. `eventId` says which; without it
+// the server picks. There is no un-complete — the API does not offer one — so
+// the UI does not pretend otherwise.
+async function completeSession(todoId, eventId, date) {
   const keepScroll = $("paneScroll").scrollTop;
   try {
-    await api("/api/todo/complete", {
+    const r = await api("/api/todo/complete", {
       method: "POST",
-      body: JSON.stringify({ planId: state.planId, todoId, date, done }),
+      body: JSON.stringify({ planId: state.planId, todoId, eventId }),
     });
     await loadPlan(state.planId, { animate: false });
     $("paneScroll").scrollTop = keepScroll;
-    // The server owns completion truth. If it declined the change, the
-    // checkbox has already snapped back — don't also claim it worked.
-    const ev = (state.events || []).find((e) => (e.todoId || e.title) === todoId && e.date === date);
-    const applied = !ev || (ev.status === "done") === !!done;
-    toast(applied ? t(done ? "toast_logged" : "toast_unlogged") : t("err_generic_safe"), applied ? "ok" : undefined);
+    // Report the server's own count, not an assumption about it.
+    if (r && Number.isFinite(r.completedCount) && Number.isFinite(r.plannedCount)) {
+      toast(fmt(t("toast_session_done"), { d: r.completedCount, n: r.plannedCount, r: r.remaining }), "ok");
+    } else {
+      toast(t("toast_logged"), "ok");
+    }
   } catch (e) {
-    toast(errText(e));
-    // Put the checkbox back where the server actually thinks it is.
-    await loadPlan(state.planId, { animate: false });
-    $("paneScroll").scrollTop = keepScroll;
+    await handleApiError(e);
+    if (state.planId) {
+      try { await loadPlan(state.planId, { animate: false }); } catch (_) {}
+      $("paneScroll").scrollTop = keepScroll;
+    }
   }
 }
 
 // ── Schedule ──
+// missesDeadline / deadlineSlipDays / deadlineNote / droppedSessions are the
+// server telling the user the truth about their own timeline. Surfaced in the
+// week view, styled as at-risk rather than as a failure.
+function showScheduleNote(r) {
+  const note = $("rollMsg");
+  if (!r) { note.hidden = true; return; }
+  const parts = [];
+  if (r.deadlineNote) parts.push(String(r.deadlineNote));
+  if (r.missesDeadline && Number.isFinite(r.deadlineSlipDays) && r.deadlineSlipDays > 0) {
+    parts.push(fmt(t("gb_moved"), { d: r.deadlineSlipDays }));
+  }
+  if (Number.isFinite(r.droppedSessions) && r.droppedSessions > 0) {
+    parts.push(fmt(t("sched_dropped"), { n: r.droppedSessions }));
+  }
+  if (!parts.length) { note.hidden = true; note.textContent = ""; return; }
+  note.hidden = false;
+  note.className = "roll-note";
+  note.textContent = parts.join(" ");
+}
+
 async function schedule() {
   try {
     const r = await api("/api/schedule", { method: "POST", body: JSON.stringify({ planId: state.planId }) });
@@ -1375,8 +1520,11 @@ async function schedule() {
     updateGoalRail(state.plan, false);
     switchTab("week");
     renderWeek();
+    // Honest feedback, not errors: the server says plainly when the timeline
+    // does not fit, and that belongs in front of the user, not in a toast.
+    showScheduleNote(r);
     toast(fmt(t("toast_scheduled"), { n: (state.events || []).length, d: prettyDate(state.plan.finishDate) }), "ok");
-  } catch (e) { toast(errText(e)); }
+  } catch (e) { handleApiError(e); }
 }
 
 async function confirmSchedule() {
@@ -1384,7 +1532,7 @@ async function confirmSchedule() {
     await api("/api/schedule/confirm", { method: "POST", body: JSON.stringify({ planId: state.planId }) });
     await loadCalendar();
     toast(t("toast_confirmed"), "ok");
-  } catch (e) { toast(errText(e)); }
+  } catch (e) { handleApiError(e); }
 }
 
 // Once it is scheduled, "Schedule it" stops being the primary thing to do.
@@ -1485,13 +1633,18 @@ function renderWeek() {
     days.forEach((d, di) => {
       const cell = el("div", "wk-cell" + dayClass(d));
       (byCell[d + "@" + hh] || []).forEach((e) => {
-        const cls = e.status === "done" ? " done" : e.status === "rolled_over" ? " missed" : (e.movedFrom ? " moved" : "");
+        // proposed = not yet confirmed; shown provisionally, not as settled.
+        const cls = e.status === "done" ? " done"
+          : e.status === "rolled_over" ? " missed"
+          : e.status === "proposed" ? " proposed"
+          : (e.movedFrom ? " moved" : "");
         const s = el("div", "sess" + cls);
         // The grid is visual; spell the same facts out for anyone not seeing it.
         const parts = [e.title, dowNames[di] + " " + prettyDate(d), e.startTime];
         if (e.durationMin) parts.push(durText(e.durationMin));
         parts.push(tg("status", e.status));
         if (e.movedFrom) parts.push(fmt(t("moved_from"), { d: prettyDate(e.movedFrom) }));
+        if (Number.isFinite(e.rolledOver) && e.rolledOver > 0) parts.push(fmt(t("rolled_n"), { n: e.rolledOver }));
         const label = parts.join(", ");
         s.title = label;
         s.setAttribute("role", "img");
@@ -1570,7 +1723,7 @@ async function rollover() {
       msg += " " + t("nothing_roll");
     }
     note.textContent = msg;
-  } catch (e) { toast(errText(e)); }
+  } catch (e) { handleApiError(e); }
 }
 
 // ── Dates ──
