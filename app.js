@@ -1895,6 +1895,36 @@ window.addEventListener("resize", () => {
   closeChatMenu();
 });
 
+// The row menu is placed once, in viewport coordinates. Scrolling the list
+// under it would leave it pointing at a different chat, so it closes instead.
+$("sbList").addEventListener("scroll", () => { if (!$("sbMenu").hidden) closeChatMenu(); }, { passive: true });
+
+// ── The on-screen keyboard ──
+// On small screens the composer is fixed to the bottom of the viewport. A
+// keyboard shrinks the *visual* viewport but not the layout viewport a fixed
+// element is pinned to, so without this the composer ends up behind the keys.
+// Publishing the overlap as --kb lets the CSS lift the dock by exactly that.
+(function () {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  let kb = 0;
+  const sync = () => {
+    const overlap = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    // A collapsing browser toolbar also shrinks the visual viewport; only a
+    // gap this large is a keyboard.
+    const next = overlap > 110 ? Math.round(overlap) : 0;
+    if (next === kb) return;
+    kb = next;
+    document.documentElement.style.setProperty("--kb", kb + "px");
+    document.body.classList.toggle("kb-up", kb > 0);
+    // The dock just moved; keep the newest message against it.
+    if (kb) requestAnimationFrame(scrollChat);
+  };
+  vv.addEventListener("resize", sync);
+  vv.addEventListener("scroll", sync);
+  sync();
+})();
+
 // Escape steps back out of whatever is layered on top: menu, then drawer, then
 // the conversation dock.
 document.addEventListener("keydown", (e) => {
