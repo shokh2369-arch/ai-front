@@ -47,6 +47,7 @@ function setLang(lang) {
   syncLangButtons();
   applyI18n();
   syncAccount();
+  syncToday();
   if (!state.started) setChips(t("starters"));
   refreshMeter();
   if (state.plan) {
@@ -287,6 +288,7 @@ function setStage(name) {
   $("surface").hidden = name !== "plan";
   $("dockToggle").hidden = name !== "plan";
   $("planState").hidden = name !== "plan";
+  syncToday();
 }
 function setDock(open) {
   document.body.classList.toggle("dock-closed", !open);
@@ -320,14 +322,338 @@ function toast(message, kind, action, ref) {
     node.appendChild(d);
   }
   // Something destructive should offer the way back, in the same breath.
+  const life = action ? 9000 : 6000;
+  // Leaving is animated too, so a toast never just blinks out of existence.
+  const dismiss = () => {
+    if (node.dataset.gone) return;
+    node.dataset.gone = "1";
+    if (calm()) { node.remove(); return; }
+    node.classList.add("leaving");
+    setTimeout(() => node.remove(), 240);
+  };
   if (action) {
     const b = el("button", "toast-act", esc(action.label));
     b.type = "button";
-    b.onclick = () => { node.remove(); action.onClick(); };
+    b.onclick = () => { dismiss(); action.onClick(); };
     node.appendChild(b);
+    // The way back does not last forever; show how long it has left.
+    const timer = el("i", "toast-timer");
+    timer.style.animationDuration = life + "ms";
+    node.appendChild(timer);
   }
+  node._dismiss = dismiss;
   box.appendChild(node);
-  setTimeout(() => node.remove(), action ? 9000 : 6000);
+  // Never a tower: past two, the oldest makes way.
+  const live = [...box.children].filter((n) => !n.dataset.gone);
+  live.slice(0, Math.max(0, live.length - MAX_TOASTS)).forEach((n) => n._dismiss && n._dismiss());
+  setTimeout(dismiss, life);
+}
+const MAX_TOASTS = 2;
+
+// ── Motion ──
+// Every animation here explains a change, confirms an action or covers a
+// wait. None of it carries information of its own, so reduced motion skips it.
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)");
+const calm = () => REDUCED.matches;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function haptic(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern || 10); } catch (_) {}
+}
+// Run a one-shot animation class, restarting it if it is already running.
+function play(node, cls, ms) {
+  if (!node || calm()) return;
+  node.classList.remove(cls);
+  void node.offsetWidth;
+  node.classList.add(cls);
+  clearTimeout(node["_" + cls]);
+  node["_" + cls] = setTimeout(() => node.classList.remove(cls), ms || 900);
+}
+// Numbers arrive by counting up to themselves.
+function countUp(node, to, ms) {
+  const end = Number(to);
+  if (!node || !Number.isFinite(end)) return;
+  if (calm() || end === 0) { node.textContent = String(end); return; }
+  const t0 = performance.now();
+  const dur = ms || 700;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    node.textContent = String(Math.round(end * (1 - Math.pow(1 - k, 3))));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  node.textContent = "0";
+  requestAnimationFrame(step);
+}
+// A little celebration from a point on screen. Purely decorative.
+function burst(x, y, n) {
+  if (calm()) return;
+  const layer = el("div", "burst");
+  layer.setAttribute("aria-hidden", "true");
+  layer.style.left = x + "px";
+  layer.style.top = y + "px";
+  const colors = ["var(--violet)", "var(--iris)", "var(--green)", "var(--honey)", "var(--rose)"];
+  for (let i = 0; i < (n || 16); i++) {
+    const a = (Math.PI * 2 * i) / (n || 16) + Math.random() * 0.5;
+    const d = 38 + Math.random() * 46;
+    const p = el("i");
+    p.style.setProperty("--dx", Math.cos(a) * d + "px");
+    p.style.setProperty("--dy", Math.sin(a) * d - 18 + "px");
+    p.style.setProperty("--r", Math.round(Math.random() * 540 - 270) + "deg");
+    p.style.background = colors[i % colors.length];
+    if (i % 3 === 0) p.className = "dot";
+    layer.appendChild(p);
+  }
+  document.body.appendChild(layer);
+  setTimeout(() => layer.remove(), 1000);
+}
+function burstFrom(node, n) {
+  if (!node) return;
+  const r = node.getBoundingClientRect();
+  if (r.width) burst(r.left + r.width / 2, r.top + r.height / 2, n);
+}
+
+// ── Mascot ──
+// "Sprout", the s. mark with a face. One drawing; the mood is a class, and
+// CSS does the acting: idle, wave, think, cheer, worry.
+let mascotSeq = 0;
+function mascotSvg(mood) {
+  const g = "mg" + ++mascotSeq;
+  return `<svg class="mascot" data-mood="${mood || "idle"}" viewBox="0 0 120 120" aria-hidden="true" focusable="false">
+    <defs><linearGradient id="${g}" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="var(--iris)"/><stop offset="1" stop-color="var(--violet-deep)"/>
+    </linearGradient></defs>
+    <ellipse class="m-shadow" cx="60" cy="112" rx="26" ry="4.5"/>
+    <g class="m-sparks"><path d="M18 30l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/><path d="M100 22l1.6 4 4 1.6-4 1.6-1.6 4-1.6-4-4-1.6 4-1.6z"/><path d="M104 64l1.2 3 3 1.2-3 1.2-1.2 3-1.2-3-3-1.2 3-1.2z"/></g>
+    <g class="m-rig">
+      <path class="m-arm m-arm-l" d="M31 72 C22 74 16 70 14 62"/>
+      <path class="m-arm m-arm-r" d="M89 72 C98 74 104 70 106 62"/>
+      <rect x="26" y="32" width="68" height="72" rx="25" fill="url(#${g})"/>
+      <rect x="35" y="38" width="22" height="8" rx="4" fill="#fff" opacity=".22"/>
+      <g class="m-face">
+        <g class="m-eyes">
+          <ellipse cx="48" cy="64" rx="8" ry="9" fill="#fff"/><ellipse cx="72" cy="64" rx="8" ry="9" fill="#fff"/>
+          <g class="m-pupils"><circle cx="49" cy="65" r="4.2"/><circle cx="73" cy="65" r="4.2"/>
+            <circle cx="50.5" cy="63.4" r="1.3" fill="#fff"/><circle cx="74.5" cy="63.4" r="1.3" fill="#fff"/></g>
+          <g class="m-happy"><path d="M41 66 Q48 58 55 66"/><path d="M65 66 Q72 58 79 66"/></g>
+        </g>
+        <g class="m-brows"><path d="M40 55 Q46 51 54 50"/><path d="M80 55 Q74 51 66 50"/></g>
+        <circle class="m-cheek" cx="37" cy="78" r="4"/><circle class="m-cheek" cx="83" cy="78" r="4"/>
+        <path class="m-mouth m-smile" d="M52 81 Q60 88 68 81"/>
+        <path class="m-mouth m-grin" d="M50 79 Q60 79 70 79 Q68 92 60 92 Q52 92 50 79Z"/>
+        <path class="m-mouth m-flat" d="M53 85 Q57 82 60 85 Q63 88 67 85"/>
+        <ellipse class="m-mouth m-o" cx="60" cy="84" rx="3.6" ry="4.2"/>
+        <path class="m-sweat" d="M89 44 Q93 51 89 54 Q85 51 89 44Z"/>
+      </g>
+    </g>
+    <g class="m-dots"><circle cx="92" cy="26" r="3.4"/><circle cx="102" cy="18" r="3.4"/><circle cx="112" cy="10" r="3.4"/></g>
+  </svg>`;
+}
+function setMood(root, mood) {
+  const svg = root && (root.matches && root.matches("svg.mascot") ? root : root.querySelector("svg.mascot"));
+  if (svg) svg.dataset.mood = mood;
+}
+
+// The coach pops in at the corner to react, says one line, and leaves. It is
+// decorative: every fact it reacts to is already on the page or in a toast.
+let coachTimer = null;
+function coach(mood, line, ms) {
+  let box = $("coach");
+  if (!box) {
+    box = el("div", "coach");
+    box.id = "coach";
+    box.setAttribute("aria-hidden", "true");
+    box.innerHTML = `<div class="coach-say"></div>${mascotSvg("idle")}`;
+    document.body.appendChild(box);
+  }
+  box.querySelector(".coach-say").textContent = line || "";
+  box.querySelector(".coach-say").hidden = !line;
+  setMood(box, mood);
+  box.classList.remove("out");
+  box.classList.add("in");
+  play(box, "hop", 700);
+  clearTimeout(coachTimer);
+  coachTimer = setTimeout(() => {
+    box.classList.add("out");
+    setTimeout(() => { box.classList.remove("in", "out"); setMood(box, "idle"); }, 320);
+  }, ms || 2400);
+}
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+const LOGO_IMG = `<img src="assets/logo-128.png" alt="" width="28" height="28">`;
+const FLAME_SVG = `<svg viewBox="0 0 24 24" aria-hidden="true"><path class="fl-out" d="M12 2.5c.7 3.2 5.2 5.4 5.2 10.6a5.2 5.2 0 0 1-10.4 0c0-2.5 1.3-4.2 2.5-5.4.1 1.8.9 2.8 2 3-.4-3-.3-5.3.7-8.2z"/><path class="fl-in" d="M12 20.3a2.7 2.7 0 0 1-2.7-2.7c0-1.5 1-2.4 1.8-3.3.2 1 .8 1.6 1.4 1.6 0-.9.3-1.8 1-2.6.8 1.1 1.2 2.1 1.2 3.3a2.7 2.7 0 0 1-2.7 3.7z"/></svg>`;
+
+// ── Sound ──
+// Short synthesized chimes, no audio files. Off until the user turns it on:
+// an app should never make noise nobody asked for.
+const soundOn = () => lsGet("startai_sound") === "1";
+const SFX = {
+  ding: [[880, 0, 0.14], [1318.5, 0.07, 0.24]],
+  streak: [[659.25, 0, 0.1], [880, 0.08, 0.1], [1174.66, 0.16, 0.3]],
+  fanfare: [[523.25, 0, 0.12], [659.25, 0.1, 0.12], [783.99, 0.2, 0.12], [1046.5, 0.3, 0.5]],
+  soft: [[523.25, 0, 0.2], [440, 0.14, 0.32]],
+};
+let audioCtx = null;
+function sfx(kind) {
+  if (!soundOn() || !SFX[kind]) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    const now = audioCtx.currentTime + 0.01;
+    SFX[kind].forEach(([freq, at, dur]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, now + at);
+      gain.gain.exponentialRampToValueAtTime(0.16, now + at + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(now + at);
+      osc.stop(now + at + dur + 0.02);
+    });
+  } catch (_) {}
+}
+function setSound(on) {
+  lsSet("startai_sound", on ? "1" : "0");
+  syncSoundButtons();
+  if (on) sfx("ding"); // a preview, so "On" is heard to be on
+}
+function syncSoundButtons() {
+  const on = soundOn();
+  $("soundPick").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.sound === "1") === on)));
+}
+
+// ── Streak and daily goal ──
+// Kept on this device, across every chat: minutes logged per calendar day.
+// A streak is the run of days with anything logged, ending today — or ending
+// yesterday, in which case it is still alive but today has not counted yet.
+const ACTIVITY_KEY = "startai_activity";
+function activity() {
+  try {
+    const a = JSON.parse(lsGet(ACTIVITY_KEY) || "{}");
+    return a && typeof a.days === "object" && a.days ? a : { days: {} };
+  } catch (_) { return { days: {} }; }
+}
+function streakInfo(a) {
+  const days = (a || activity()).days;
+  const today = isoToday();
+  const logged = (d) => (days[d] || 0) > 0;
+  let d = logged(today) ? today : addDays(today, -1);
+  let n = 0;
+  while (logged(d)) { n++; d = addDays(d, -1); }
+  return { n, today: logged(today) };
+}
+function todayMinutes() { return activity().days[isoToday()] || 0; }
+function dailyGoal() {
+  const f = state.plan ? planFacts(state.plan) : {};
+  if (f.dailyMin) return f.dailyMin;
+  if (f.hoursPerWeek) return Math.max(5, Math.round((f.hoursPerWeek * 60) / 7));
+  return 30;
+}
+// Record one logged session and say what it changed.
+function logActivity(minutes) {
+  const a = activity();
+  const today = isoToday();
+  const before = { streak: streakInfo(a), min: a.days[today] || 0 };
+  a.days[today] = before.min + Math.max(1, minutes || 0);
+  // Two months is plenty to count any streak worth showing.
+  const cutoff = addDays(today, -60);
+  Object.keys(a.days).forEach((d) => { if (d < cutoff) delete a.days[d]; });
+  lsSet(ACTIVITY_KEY, JSON.stringify(a));
+  const goal = dailyGoal();
+  return {
+    streak: streakInfo(a).n,
+    streakGrew: !before.streak.today,
+    goalClosed: before.min < goal && a.days[today] >= goal,
+  };
+}
+// "1 day", "2 days", "2 дня", "5 дней" — the plural rules come from the browser.
+function streakUnit(n) {
+  let rule = "other";
+  try { rule = new Intl.PluralRules(LANG).select(n); } catch (_) {}
+  return tg("streak_unit", rule) !== rule ? tg("streak_unit", rule) : tg("streak_unit", "other");
+}
+function syncToday() {
+  const box = $("todayStats");
+  if (!box) return;
+  const s = streakInfo();
+  const onPlan = document.body.dataset.stage === "plan" && !!state.plan;
+  box.hidden = !onPlan && s.n === 0;
+  if (box.hidden) closeTodayPop();
+
+  $("streak").classList.toggle("cold", !s.today);
+  $("streakN").textContent = s.n;
+  $("streakUnit").textContent = streakUnit(s.n);
+  const labels = [fmt(t(s.today || s.n === 0 ? "streak_aria" : "streak_aria_risk"), { n: s.n })];
+
+  const ring = $("goalRing");
+  ring.hidden = !onPlan;
+  if (onPlan) {
+    const goal = dailyGoal();
+    const done = todayMinutes();
+    const full = done >= goal;
+    $("grFill").style.strokeDasharray = Math.min(100, (done / goal) * 100) + " 100";
+    $("grText").textContent = full ? "✓" : String(done);
+    ring.classList.toggle("full", full);
+    labels.push(fmt(t("goal_aria"), { d: done, g: goal }));
+  }
+  box.setAttribute("aria-label", labels.join(" · "));
+  box.title = labels.join(" · ");
+  if (!$("todayPop").hidden) renderTodayPop();
+}
+
+// Tapping the streak or the ring explains them: what the numbers mean, what
+// to do next, and the last seven days at a glance.
+function renderTodayPop() {
+  const pop = $("todayPop");
+  const a = activity();
+  const s = streakInfo(a);
+  const onPlan = !$("goalRing").hidden;
+  const today = isoToday();
+  const dow = t("dow");
+  const week = Array.from({ length: 7 }, (_, i) => addDays(today, i - 6)).map((d) => {
+    const wd = (new Date(d + "T00:00:00Z").getUTCDay() + 6) % 7;
+    const on = (a.days[d] || 0) > 0;
+    return `<li class="${on ? "on" : ""}${d === today ? " is-today" : ""}"><i>${on ? FLAME_SVG : ""}</i><span>${esc(dow[wd])}</span></li>`;
+  }).join("");
+  const streakLine = s.n === 0 ? t("streak_start")
+    : s.today ? fmt(t("streak_keep"), { m: s.n + 1 }) : t("streak_risk");
+
+  let goalHtml = "";
+  if (onPlan) {
+    const goal = dailyGoal();
+    const done = todayMinutes();
+    const full = done >= goal;
+    goalHtml =
+      `<div class="tp-row">
+         <span class="tp-ring${full ? " full" : ""}" aria-hidden="true">
+           <svg viewBox="0 0 36 36"><circle class="gr-track" cx="18" cy="18" r="15"/><circle class="gr-fill" cx="18" cy="18" r="15" pathLength="100" style="stroke-dasharray:${Math.min(100, (done / goal) * 100)} 100"/></svg>
+         </span>
+         <div><b>${esc(fmt(t("goal_title"), { d: done }))}</b>
+           <p>${esc(full ? t("goal_done") : fmt(t("goal_left"), { r: goal - done, g: goal }))}</p></div>
+       </div>`;
+  }
+  pop.innerHTML =
+    `<div class="tp-row">
+       <span class="tp-flame${s.today ? "" : " cold"}" aria-hidden="true">${FLAME_SVG}</span>
+       <div><b>${esc(s.n + " " + streakUnit(s.n))}</b><p>${esc(streakLine)}</p></div>
+     </div>
+     <div class="tp-week" aria-label="${esc(t("week_label"))}"><ol>${week}</ol></div>
+     ${goalHtml}`;
+}
+function openTodayPop() {
+  const pop = $("todayPop");
+  renderTodayPop();
+  const r = $("todayStats").getBoundingClientRect();
+  pop.style.top = Math.round(r.bottom + 8) + "px";
+  pop.style.right = Math.max(12, Math.round(innerWidth - r.right)) + "px";
+  pop.hidden = false;
+  $("todayStats").setAttribute("aria-expanded", "true");
+}
+function closeTodayPop() {
+  const pop = $("todayPop");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  $("todayStats").setAttribute("aria-expanded", "false");
 }
 
 // ── Chat ──
@@ -338,7 +664,7 @@ function scrollChat() {
 function addMsg(text, who, extra = "") {
   const log = $("chatLog");
   const turn = el("div", `turn ${who} ${extra}`);
-  if (who === "ai") turn.appendChild(el("div", "avatar", "s."));
+  if (who === "ai") turn.appendChild(el("div", "avatar", LOGO_IMG));
   turn.appendChild(el("div", "bubble", esc(text)));
   log.appendChild(turn);
   scrollChat();
@@ -347,11 +673,56 @@ function addMsg(text, who, extra = "") {
 function addTyping() {
   const log = $("chatLog");
   const turn = el("div", "turn ai");
-  turn.appendChild(el("div", "avatar", "s."));
+  turn.appendChild(el("div", "avatar", LOGO_IMG));
   turn.appendChild(el("div", "bubble typing", "<i></i><i></i><i></i>"));
   log.appendChild(turn);
   scrollChat();
   return turn;
+}
+// The plan-building card: the mascot thinks while the steps tick off.
+function addBuilding() {
+  const log = $("chatLog");
+  const turn = el("div", "turn ai building");
+  turn.setAttribute("role", "status");
+  const steps = t("build_steps");
+  turn.innerHTML =
+    `<div class="build-card">
+       <div class="build-mascot">${mascotSvg("think")}</div>
+       <div class="build-main">
+         <b>${esc(t("build_label"))}</b>
+         <ol class="build-steps">${steps.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+         <div class="build-skel" aria-hidden="true"><i></i><i></i><i></i></div>
+       </div>
+     </div>`;
+  log.appendChild(turn);
+  scrollChat();
+  const items = turn.querySelectorAll(".build-steps li");
+  let i = 0;
+  const mark = () => items.forEach((li, j) => {
+    li.classList.toggle("done", j < i);
+    li.classList.toggle("now", j === i);
+  });
+  mark();
+  const timer = setInterval(() => { if (i < items.length - 1) { i++; mark(); } }, 430);
+  return {
+    finish() {
+      clearInterval(timer);
+      i = items.length;
+      mark();
+      setMood(turn, "cheer");
+    },
+    remove() { clearInterval(timer); turn.remove(); },
+  };
+}
+// The intake mascot waves hello, then settles into its idle bob.
+let greetTimer = null;
+function greetMascot() {
+  const box = $("introMascot");
+  if (!box) return;
+  if (!box.firstChild) box.innerHTML = mascotSvg("wave");
+  setMood(box, "wave");
+  clearTimeout(greetTimer);
+  greetTimer = setTimeout(() => setMood(box, "idle"), 2400);
 }
 // A chip is either a suggested reply (a string) or an action ({label, onClick}).
 function setChips(options) {
@@ -610,6 +981,7 @@ function resetWorkspace() {
   state.scheduled = false; syncToolbar();
   setChips([]); renderTurnState(null);
   setStage("intake");
+  greetMascot();
   setDock(true);
   switchTab("plan");
 }
@@ -672,6 +1044,16 @@ async function openChat(id) {
 function deleteChat(id) {
   const idx = chats.findIndex((c) => c.id === id);
   if (idx < 0) return;
+  // Fold the row away first, so the list closes over the gap instead of
+  // jumping. Only the look waits; the data goes on the next line either way.
+  const rowEl = document.querySelector(`.sb-item[data-id="${CSS.escape(id)}"]`);
+  if (rowEl && !calm() && !rowEl.classList.contains("collapsing")) {
+    rowEl.style.height = rowEl.offsetHeight + "px";
+    void rowEl.offsetWidth;
+    rowEl.classList.add("collapsing");
+    setTimeout(() => deleteChat(id), 220);
+    return;
+  }
   const removed = chats[idx];
   const wasActive = activeChatId === id;
   chats.splice(idx, 1);
@@ -687,6 +1069,7 @@ function deleteChat(id) {
       chats.splice(Math.min(idx, chats.length), 0, removed);
       saveHistory();
       renderChatList();
+      play(document.querySelector(`.sb-item[data-id="${CSS.escape(removed.id)}"]`), "restored", 500);
     },
   });
 }
@@ -879,6 +1262,7 @@ function syncSettings() {
   const pref = themePref();
   $("themePick").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themePref === pref)));
   $("langPick").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === LANG)));
+  syncSoundButtons();
 
   const mac = /Mac|iP(hone|ad)/.test(navigator.platform || navigator.userAgent || "");
   const list = $("kbdList");
@@ -934,7 +1318,7 @@ async function clearAllChats() {
   toast(t("done_clear"), "ok");
 }
 async function resetAppData() {
-  ["startai_name", "startai_sidebar", "startai_uid", "startai_lang"].forEach((k) => lsDel(k));
+  ["startai_name", "startai_sidebar", "startai_uid", "startai_lang", "startai_sound", ACTIVITY_KEY].forEach((k) => lsDel(k));
   lsSet("startai_theme", "system");
   applyTheme("system");
   setLang("en");
@@ -1018,6 +1402,7 @@ async function send(text) {
   addMsg(msg, "user");
   logMsg(msg, "user", "");
   setBusy(true);
+  setMood($("introMascot"), "think");
   const typing = addTyping();
 
   try {
@@ -1037,10 +1422,22 @@ async function send(text) {
     const c = activeChat();
     if (c) c.turnState = st;
     if (turn.stage === "plan_ready" && turn.planId) {
-      await loadPlan(turn.planId);
+      // The one wait worth dressing up: show the plan being assembled, and
+      // hold it long enough to read before the plan replaces it.
+      const build = addBuilding();
+      try {
+        await Promise.all([loadPlan(turn.planId), wait(calm() ? 0 : 1800)]);
+      } finally {
+        build.finish();
+      }
+      if (!calm()) await wait(320);
+      build.remove();
       setStage("plan");
       setDock(false);
       switchTab("plan");
+      play($("goalBand"), "reveal", 1800);
+      if (!calm()) setTimeout(() => { coach("cheer", t("m_ready"), 2600); burstFrom($("coach"), 18); }, 650);
+      setTimeout(() => sfx("fanfare"), calm() ? 0 : 650);
       // The page just changed underneath the user. Say so, and land focus on
       // the new content instead of dropping it on <body> with the composer.
       announce(t("plan_ready_sr"));
@@ -1050,9 +1447,12 @@ async function send(text) {
     refreshMeter();
   } catch (e) {
     typing.remove();
+    const b = $("chatLog").querySelector(".turn.building");
+    if (b) b.remove();
     addMsg(errText(e), "ai", "declined");
   } finally {
     setBusy(false);
+    setMood($("introMascot"), "idle");
     if (dockIsOpen()) $("input").focus();
   }
 }
@@ -1178,6 +1578,7 @@ function renderGoalBand(p) {
   chips.innerHTML = "";
   const chip = (label, value, mono) => {
     const c = el("span", "gb-chip");
+    c.style.setProperty("--k", chips.children.length);
     c.innerHTML = `<u>${esc(label)}</u><span class="${mono ? "v" : ""}">${esc(value)}</span>`;
     chips.appendChild(c);
   };
@@ -1345,6 +1746,7 @@ function todoRow(td, i, st) {
   const canLog = !!target && !allDone;
 
   const row = el("div", "todo series" + (allDone ? " done" : "") + (st && st.today ? " is-today" : ""));
+  row.dataset.todo = td.id;
   if (animateRows) row.style.animationDelay = Math.min(i * 0.04, 0.4) + "s";
 
   const check = el("span", "check" + (canLog ? "" : " idle"));
@@ -1444,8 +1846,8 @@ function renderKit(items, budget) {
 
   const foot = el("div", "kit-foot");
   foot.innerHTML =
-    `<span>${fmt(esc(t("kit_free")), { n: `<b>${freeCount}</b>`, m: `<b>${priced.length}</b>` })}</span>
-     <span>${fmt(esc(t("kit_total")), { lo: `<b>${lo}</b>`, hi: `<b>${hi}</b>` })}</span>`;
+    `<span>${fmt(esc(t("kit_free")), { n: `<b data-count="${freeCount}">${freeCount}</b>`, m: `<b>${priced.length}</b>` })}</span>
+     <span>${fmt(esc(t("kit_total")), { lo: `<b data-count="${lo}">${lo}</b>`, hi: `<b data-count="${hi}">${hi}</b>` })}</span>`;
   if (budget != null) {
     const verdict = budget === 0 ? "free" : hi <= budget ? "fits" : lo <= budget ? "tight" : "over";
     const v = el("span", "kit-verdict " + (verdict === "free" ? "tight" : verdict));
@@ -1455,6 +1857,20 @@ function renderKit(items, budget) {
     foot.appendChild(v);
   }
   box.appendChild(foot);
+  if (animateRows) countUpWhenSeen(foot);
+}
+
+// A count-up nobody sees is wasted, and the Kit tab is often not the one
+// open, so the numbers wait until their pane is on screen.
+function countUpWhenSeen(root) {
+  const nums = root.querySelectorAll("[data-count]");
+  if (!nums.length || calm() || !("IntersectionObserver" in window)) return;
+  const io = new IntersectionObserver((entries) => {
+    if (!entries.some((e) => e.isIntersecting)) return;
+    io.disconnect();
+    nums.forEach((n) => countUp(n, n.dataset.count, 800));
+  });
+  io.observe(root);
 }
 
 // Completes exactly ONE session of a series. `eventId` says which; without it
@@ -1462,6 +1878,10 @@ function renderKit(items, budget) {
 // the UI does not pretend otherwise.
 async function completeSession(todoId, eventId, date) {
   const keepScroll = $("paneScroll").scrollTop;
+  const rowSel = `.todo[data-todo="${CSS.escape(String(todoId))}"]`;
+  const oldBar = document.querySelector(rowSel + " .series-bar i");
+  const fromPct = oldBar ? oldBar.style.width : null;
+  haptic(12);
   try {
     const r = await api("/api/todo/complete", {
       method: "POST",
@@ -1469,11 +1889,16 @@ async function completeSession(todoId, eventId, date) {
     });
     await loadPlan(state.planId, { animate: false });
     $("paneScroll").scrollTop = keepScroll;
-    // Report the server's own count, not an assumption about it.
+    const td = ((state.plan && state.plan.todos) || []).find((x) => x.id === todoId);
+    const act = logActivity(td && td.durationMin);
+    syncToday();
+    celebrateLog(document.querySelector(rowSel), fromPct, act);
+    // The row and the coach already show this happening, so a toast per tap
+    // would only pile up. Screen readers still hear the server's own count.
     if (r && Number.isFinite(r.completedCount) && Number.isFinite(r.plannedCount)) {
-      toast(fmt(t("toast_session_done"), { d: r.completedCount, n: r.plannedCount, r: r.remaining }), "ok");
+      announce(fmt(t("toast_session_done"), { d: r.completedCount, n: r.plannedCount, r: r.remaining }));
     } else {
-      toast(t("toast_logged"), "ok");
+      announce(t("toast_logged"));
     }
   } catch (e) {
     await handleApiError(e);
@@ -1481,6 +1906,43 @@ async function completeSession(todoId, eventId, date) {
       try { await loadPlan(state.planId, { animate: false }); } catch (_) {}
       $("paneScroll").scrollTop = keepScroll;
     }
+  }
+}
+
+// The row just re-rendered with its new count. Replay the change: the box
+// springs, the bar grows from where it was, and a finished series gets a
+// proper send-off.
+function celebrateLog(row, fromPct, act) {
+  act = act || {};
+  // The header reacts whatever happened to the row.
+  if (act.goalClosed) { play($("goalRing"), "pop", 800); burstFrom($("goalRing"), 14); }
+  if (act.streakGrew) play($("streak"), "pop", 800);
+  if (!row) return;
+  const bar = row.querySelector(".series-bar i");
+  if (bar && fromPct != null && !calm()) {
+    const to = bar.style.width;
+    bar.style.width = fromPct;
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = to; }));
+  }
+  play(row, "just-logged", 1100);
+  // One reaction per log: the biggest thing that just happened wins.
+  const seriesDone = row.classList.contains("done");
+  if (seriesDone) {
+    haptic([10, 50, 22]);
+    burstFrom(row.querySelector(".check"), 22);
+  }
+  if (act.goalClosed) {
+    sfx("fanfare");
+    coach("cheer", t("m_goal"), 2600);
+  } else if (seriesDone) {
+    sfx("fanfare");
+    coach("cheer", t("m_series"), 2600);
+  } else if (act.streakGrew && act.streak > 1) {
+    sfx("streak");
+    coach("cheer", fmt(t("m_streak"), { n: act.streak }), 2400);
+  } else {
+    sfx("ding");
+    coach("cheer", t(pick(["m_logged", "m_logged2", "m_logged3"])), 1900);
   }
 }
 
@@ -1520,6 +1982,7 @@ async function schedule() {
     updateGoalRail(state.plan, false);
     switchTab("week");
     renderWeek();
+    play($("wkGrid"), "drop-in", 1600);
     // Honest feedback, not errors: the server says plainly when the timeline
     // does not fit, and that belongs in front of the user, not in a toast.
     showScheduleNote(r);
@@ -1639,6 +2102,8 @@ function renderWeek() {
           : e.status === "proposed" ? " proposed"
           : (e.movedFrom ? " moved" : "");
         const s = el("div", "sess" + cls);
+        if (e.id != null) s.dataset.ev = e.id;
+        s.style.setProperty("--k", Math.min(grid.querySelectorAll(".sess").length, 24));
         // The grid is visual; spell the same facts out for anyone not seeing it.
         const parts = [e.title, dowNames[di] + " " + prettyDate(d), e.startTime];
         if (e.durationMin) parts.push(durText(e.durationMin));
@@ -1703,11 +2168,24 @@ async function rollover() {
     const asOf = addDays(firstDate, 1);
     const r = await api("/api/rollover", { method: "POST", body: JSON.stringify({ userId: state.userId, asOf }) });
 
+    const before = sessionRects();
     await loadPlan(state.planId, { animate: false });
     const res = (r.results || [])[0];
     const shifted = !!(res && res.finishShiftDays > 0);
     updateSpineFinish(state.plan);
     updateGoalRail(state.plan, shifted);
+    slideSessions(before);
+    if (shifted) {
+      play(document.querySelector("#lblEnd b"), "flip", 800);
+      play($("spineFinishDate"), "flip", 800);
+      play($("planState"), "nudge", 900);
+      coach("worry", t("m_slip"), 2800);
+      sfx("soft");
+    } else if (res && res.moved > 0) {
+      coach("idle", t("m_slip"), 2400);
+    } else {
+      coach("cheer", t("m_ontrack"), 2200);
+    }
 
     const note = $("rollMsg");
     note.hidden = false;
@@ -1724,6 +2202,41 @@ async function rollover() {
     }
     note.textContent = msg;
   } catch (e) { handleApiError(e); }
+}
+
+// Where every session sits on screen right now, so a re-render can show each
+// one travelling to its new day (FLIP) instead of teleporting there.
+function sessionRects() {
+  const out = {};
+  if (calm()) return out;
+  document.querySelectorAll("#wkGrid .sess[data-ev]").forEach((n) => {
+    const r = n.getBoundingClientRect();
+    if (r.width) out[n.dataset.ev] = r;
+  });
+  return out;
+}
+function slideSessions(before) {
+  if (calm()) return;
+  document.querySelectorAll("#wkGrid .sess[data-ev]").forEach((n) => {
+    const was = before[n.dataset.ev];
+    const now = n.getBoundingClientRect();
+    if (!now.width) return;
+    if (was) {
+      const dx = was.left - now.left;
+      const dy = was.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      n.animate(
+        [{ transform: `translate(${dx}px, ${dy}px)`, zIndex: 2 }, { transform: "none", zIndex: 2 }],
+        { duration: 620, easing: "cubic-bezier(.22,.61,.36,1)" }
+      );
+      n.classList.add("travelled");
+      setTimeout(() => n.classList.remove("travelled"), 1400);
+    } else if (n.classList.contains("moved")) {
+      // Arrived from another week: slide in from the left, where it came from.
+      play(n, "arrive", 700);
+    }
+  });
+  document.querySelectorAll("#wkGrid .sess.missed").forEach((n) => play(n, "ghost", 900));
 }
 
 // ── Dates ──
@@ -1857,6 +2370,16 @@ $("setName").addEventListener("change", () => {
   toast(t("done_saved"), "ok");
 });
 $("themePick").querySelectorAll("button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.themePref)));
+$("soundPick").querySelectorAll("button").forEach((b) => (b.onclick = () => setSound(b.dataset.sound === "1")));
+$("todayStats").onclick = (e) => {
+  e.stopPropagation();
+  if ($("todayPop").hidden) openTodayPop(); else closeTodayPop();
+};
+document.addEventListener("click", (e) => { if (!$("todayPop").contains(e.target)) closeTodayPop(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("todayPop").hidden) { closeTodayPop(); $("todayStats").focus(); }
+});
+window.addEventListener("resize", closeTodayPop);
 $("langPick").querySelectorAll("button").forEach((b) => (b.onclick = () => { setLang(b.dataset.lang); syncSettings(); syncAccount(); }));
 $("clearChatsBtn").onclick = () => askConfirm("ask_clear", clearAllChats);
 $("resetBtn").onclick = () => askConfirm("ask_reset", resetAppData);

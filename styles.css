@@ -354,12 +354,10 @@ body.sb-closed .topbar-open{ display:flex; }
   position:sticky; top:0; z-index:20;
 }
 .brand{ display:flex; align-items:center; gap:11px; }
+/* The brand mark is an image; the glow follows its own rounded shape. */
 .logo{
-  width:36px; height:36px; border-radius:11px; color:#fff;
-  font-family:var(--font-display); font-weight:700; font-size:19px; letter-spacing:-1.5px;
-  background:linear-gradient(145deg,var(--iris),var(--violet) 55%,var(--violet-deep));
-  display:flex; align-items:center; justify-content:center; flex:none;
-  box-shadow:0 4px 14px rgba(91,70,229,.4), inset 0 1px 0 rgba(255,255,255,.35);
+  width:36px; height:36px; flex:none; display:block; object-fit:contain;
+  filter:drop-shadow(0 4px 10px rgba(91,70,229,.35));
 }
 .wordmark{ font-family:var(--font-display); font-weight:700; font-size:19px; color:var(--ink); letter-spacing:-.03em; }
 .wordmark span{ color:var(--violet); }
@@ -826,12 +824,8 @@ body[data-stage="plan"]:not(.dock-closed) .dock-toggle .dt-close{ transform:rota
 
 .turn{ display:flex; gap:10px; max-width:100%; animation:rise .34s var(--ease) both; }
 .turn.user{ justify-content:flex-end; }
-.avatar{
-  width:28px; height:28px; border-radius:9px; flex:none; margin-top:2px;
-  font-family:var(--font-display); font-weight:700; font-size:13px; letter-spacing:-1px; color:#fff;
-  background:var(--violet);
-  display:flex; align-items:center; justify-content:center;
-}
+.avatar{ width:28px; height:28px; flex:none; margin-top:2px; }
+.avatar img{ display:block; width:100%; height:100%; object-fit:contain; }
 .bubble{ padding:11px 14px; border-radius:16px; font-size:14.5px; max-width:84%; white-space:pre-wrap; word-wrap:break-word; overflow-wrap:anywhere; }
 .turn.ai .bubble{ background:var(--surface-2); border:1px solid var(--line); color:var(--ink); border-top-left-radius:5px; }
 .turn.ai.declined .bubble{ background:var(--honey-100); border-color:var(--honey-100); color:var(--honey); }
@@ -1131,7 +1125,314 @@ body[data-stage="plan"]:not(.dock-closed) .dock-toggle .dt-close{ transform:rota
   .btn.primary:hover:not(:disabled){ box-shadow:0 6px 16px rgba(91,70,229,.28); }
 }
 
+/* ── Motion: feedback, reveals, the mascot ─────────── */
+/* Press feedback. `scale` is its own property, so it composes with the
+   hover lifts that already use `transform`. */
+.btn{ transition:transform .12s var(--ease), background .14s, box-shadow .14s, scale .12s var(--ease); }
+.chip{ transition:transform .12s var(--ease), background .12s, box-shadow .12s, scale .12s var(--ease); }
+#sendBtn{ transition:transform .12s var(--ease), opacity .15s, background .15s, scale .12s var(--ease); }
+.toast-act{ transition:background .14s, scale .12s var(--ease); }
+.wk-arrow,.wk-today,.theme-toggle{ transition:color .14s, border-color .14s, scale .12s var(--ease); }
+.seg-btn{ transition:color .2s, scale .12s var(--ease); }
+.sb-new{ transition:background .14s, border-color .14s, color .14s, scale .12s var(--ease); }
+.sb-icon{ transition:background .14s, color .14s, scale .12s var(--ease); }
+.sb-acct{ transition:background .14s, scale .12s var(--ease); }
+.sb-item-main{ transition:scale .12s var(--ease); }
+.dock-toggle{ transition:color .15s, background .15s, border-color .15s, scale .12s var(--ease); }
+.log-btn{ transition:background .14s, border-color .14s, color .14s, scale .12s var(--ease); }
+.btn:active:not(:disabled), .chip:active, .toast-act:active,
+.wk-arrow:active:not(:disabled), .wk-today:active:not(:disabled), .theme-toggle:active,
+.seg-btn:active, .sb-new:active, .sb-icon:active, .sb-acct:active,
+.sb-item-main:active, .dock-toggle:active{ scale:.96; }
+#sendBtn:active:not(:disabled), .log-btn:active{ scale:.86; }
+
+/* Logging a session: the box springs, the bar grows, the count bumps. */
+.todo.just-logged{ animation:row-flash 1s var(--ease); }
+.todo.just-logged .check > *{ animation:pop .5s cubic-bezier(.34,1.56,.64,1); }
+.todo.just-logged .series-bar i{ transition:width .7s var(--ease); }
+.todo.just-logged .todo-prog{ display:inline-block; color:var(--green); animation:bump .6s cubic-bezier(.34,1.56,.64,1); }
+@keyframes row-flash{ 0%,30%{ background:var(--green-100); } 100%{ background:transparent; } }
+@keyframes pop{ 0%{ transform:scale(.6); } 60%{ transform:scale(1.18); } 100%{ transform:scale(1); } }
+@keyframes bump{ 0%{ transform:none; } 40%{ transform:translateY(-2px) scale(1.22); } 100%{ transform:none; } }
+
+/* Confetti */
+.burst{ position:fixed; z-index:70; width:0; height:0; pointer-events:none; }
+.burst i{
+  position:absolute; left:-4px; top:-3px; width:8px; height:6px; border-radius:2px;
+  animation:burst .95s cubic-bezier(.2,.7,.3,1) forwards;
+}
+.burst i.dot{ width:6px; height:6px; border-radius:50%; }
+@keyframes burst{
+  0%{ transform:translate(0,0) rotate(0) scale(.5); opacity:1; }
+  55%{ transform:translate(var(--dx),var(--dy)) rotate(calc(var(--r) * .6)) scale(1); opacity:1; }
+  100%{ transform:translate(var(--dx),calc(var(--dy) + 34px)) rotate(var(--r)) scale(.9); opacity:0; }
+}
+
+/* Building the plan: steps tick off, placeholders shimmer. */
+.build-card{
+  display:flex; gap:14px; align-items:center; width:min(100%,460px);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg);
+  padding:14px 18px 14px 12px; box-shadow:var(--sh-sm);
+}
+.build-mascot{ width:68px; height:68px; flex:none; }
+.build-main{ flex:1; min-width:0; }
+.build-main > b{ font-family:var(--font-display); font-size:15px; color:var(--ink); }
+.build-steps{ list-style:none; margin:8px 0 0; padding:0; display:grid; gap:5px; font-size:13px; color:var(--faint); }
+.build-steps li{ display:flex; align-items:center; gap:8px; transition:color .25s; }
+.build-steps li::before{
+  content:""; width:14px; height:14px; flex:none; box-sizing:border-box; border-radius:50%;
+  border:2px solid var(--line); display:grid; place-items:center;
+  font-size:9px; font-weight:700; line-height:1; color:#fff;
+}
+.build-steps li.now{ color:var(--ink); }
+.build-steps li.now::before{ border-color:var(--violet); border-top-color:transparent; animation:spin .8s linear infinite; }
+.build-steps li.done{ color:var(--muted); }
+.build-steps li.done::before{ content:"✓"; background:var(--green); border-color:var(--green); animation:pop .4s cubic-bezier(.34,1.56,.64,1); }
+.build-skel{ margin-top:10px; }
+.build-skel i{
+  display:block; height:7px; margin-top:6px; border-radius:4px;
+  background:linear-gradient(90deg,var(--line-2) 0%,var(--line) 40%,var(--line-2) 80%); background-size:220% 100%;
+  animation:shimmer 1.3s linear infinite;
+}
+.build-skel i:nth-child(1){ width:92%; } .build-skel i:nth-child(2){ width:70%; } .build-skel i:nth-child(3){ width:48%; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+@keyframes shimmer{ from{ background-position:120% 0; } to{ background-position:-120% 0; } }
+
+/* The plan arriving: chips cascade, the rail draws itself, the date flips. */
+.band.reveal .gb-chip{ animation:rise .35s var(--ease) both; animation-delay:calc(.15s + var(--k,0) * 55ms); }
+.band.reveal .rail-fill{ transform-origin:left center; animation:rail-draw 1s var(--ease) .25s both; }
+.band.reveal .rail-tick, .band.reveal .rail-lbl{ animation:fade .45s var(--ease) .8s both; }
+.band.reveal .rail-lbl.at-end b{ animation:flip .7s var(--ease) 1s both; }
+@keyframes rail-draw{ from{ transform:scaleX(0); } to{ transform:scaleX(1); } }
+.flip{ animation:flip .7s var(--ease); }
+@keyframes flip{
+  0%{ transform:perspective(300px) rotateX(90deg); opacity:0; }
+  60%{ transform:perspective(300px) rotateX(-18deg); opacity:1; }
+  100%{ transform:none; opacity:1; }
+}
+.ps-dot{ transition:background .5s var(--ease), box-shadow .5s var(--ease); }
+.plan-state.nudge{ animation:nudge .7s var(--ease); }
+@keyframes nudge{ 0%,100%{ transform:none; } 20%{ transform:translateX(-3px); } 40%{ transform:translateX(3px); } 60%{ transform:translateX(-2px); } 80%{ transform:translateX(1px); } }
+
+/* Week: sessions land on their days; a missed day shows them travelling. */
+.sess{ position:relative; }
+.drop-in .sess{ animation:drop .45s cubic-bezier(.34,1.4,.64,1) both; animation-delay:calc(var(--k,0) * 30ms); }
+.sess.travelled{ box-shadow:0 0 0 2px var(--honey), var(--sh-md); transition:box-shadow .5s var(--ease); }
+.sess.arrive{ animation:arrive .6s var(--ease); }
+.sess.ghost{ animation:ghost .9s var(--ease); }
+@keyframes drop{ from{ opacity:0; transform:translateY(-14px) scale(.95); } to{ opacity:1; transform:none; } }
+@keyframes arrive{ from{ opacity:0; transform:translateX(-26px); } to{ opacity:1; transform:none; } }
+@keyframes ghost{ 0%{ opacity:1; } 40%{ opacity:.45; transform:scale(.96); } 100%{ opacity:1; transform:none; } }
+
+/* Toasts spring in, fade out, and show how long "Undo" lasts. */
+.toast{ position:relative; overflow:hidden; animation:toast-in .38s cubic-bezier(.34,1.4,.64,1) both; }
+.toast.leaving{ animation:toast-out .24s var(--ease) forwards; }
+.toast-timer{
+  position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--violet-200);
+  transform-origin:left center; animation:toast-timer linear forwards;
+}
+@keyframes toast-in{ from{ opacity:0; transform:translateY(18px) scale(.96); } to{ opacity:1; transform:none; } }
+@keyframes toast-out{ to{ opacity:0; transform:translateY(10px) scale(.97); } }
+@keyframes toast-timer{ from{ transform:scaleX(1); } to{ transform:scaleX(0); } }
+
+/* Chat list: a deleted row folds away; an undone one slides back. */
+.sb-item.collapsing{ overflow:hidden; pointer-events:none; animation:sb-out .22s var(--ease) forwards; }
+.sb-item.restored{ animation:sb-in .45s var(--ease); }
+@keyframes sb-out{ to{ height:0; opacity:0; transform:translateX(-14px); } }
+@keyframes sb-in{ from{ opacity:0; transform:translateX(-14px); background:var(--violet-100); } to{ opacity:1; transform:none; } }
+
+/* ── Mascot ("Sprout") ─────────────────────────────── */
+.mascot{ display:block; width:100%; height:100%; overflow:visible; }
+.mascot .m-shadow{ fill:var(--ink); opacity:.1; transform-origin:60px 112px; animation:m-shadow 3.2s ease-in-out infinite; }
+.mascot .m-rig{ transform-origin:60px 104px; animation:m-bob 3.2s ease-in-out infinite; }
+.mascot .m-arm{ fill:none; stroke:var(--violet-deep); stroke-width:9; stroke-linecap:round; transition:transform .35s cubic-bezier(.34,1.56,.64,1); }
+.mascot .m-arm-l{ transform-origin:31px 72px; }
+.mascot .m-arm-r{ transform-origin:89px 72px; }
+.mascot .m-eyes{ transform-origin:60px 64px; animation:m-blink 4.8s infinite; }
+.mascot .m-pupils{ fill:#1d1340; transition:transform .3s var(--ease), opacity .2s; }
+.mascot .m-happy path,.mascot .m-brows path{ fill:none; stroke:#1d1340; stroke-width:3.6; stroke-linecap:round; }
+.mascot .m-happy,.mascot .m-brows,.mascot .m-sweat,.mascot .m-sparks,.mascot .m-dots circle{ opacity:0; transition:opacity .2s; }
+.mascot .m-cheek{ fill:#ff8fb1; opacity:.5; }
+.mascot .m-mouth{ opacity:0; transition:opacity .15s; }
+.mascot .m-smile,.mascot .m-flat{ fill:none; stroke:#1d1340; stroke-width:3.4; stroke-linecap:round; }
+.mascot .m-grin,.mascot .m-o{ fill:#1d1340; }
+.mascot .m-sweat{ fill:#8fd3ff; }
+.mascot .m-sparks{ fill:#ffc94d; }
+.mascot .m-dots circle{ fill:var(--iris); }
+.mascot[data-mood="idle"] .m-smile,
+.mascot[data-mood="wave"] .m-smile{ opacity:1; }
+
+/* wave */
+.mascot[data-mood="wave"] .m-arm-r{ animation:m-wave 2.2s var(--ease) both; }
+.mascot[data-mood="wave"] .m-rig{ animation:m-lean 2.2s var(--ease) both; }
+
+/* think: looks up, hand to chin, thought dots rise */
+.mascot[data-mood="think"] .m-o{ opacity:1; }
+.mascot[data-mood="think"] .m-pupils{ transform:translate(2px,-3px); }
+.mascot[data-mood="think"] .m-arm-l{ transform:rotate(-120deg); }
+.mascot[data-mood="think"] .m-rig{ animation:m-sway 2.4s ease-in-out infinite; }
+.mascot[data-mood="think"] .m-dots circle{ animation:m-dot 1.5s ease-in-out infinite; }
+.mascot[data-mood="think"] .m-dots circle:nth-child(2){ animation-delay:.2s; }
+.mascot[data-mood="think"] .m-dots circle:nth-child(3){ animation-delay:.4s; }
+
+/* cheer: jumps, arms up, happy eyes, sparkles */
+.mascot[data-mood="cheer"] .m-grin,
+.mascot[data-mood="cheer"] .m-happy{ opacity:1; }
+.mascot[data-mood="cheer"] .m-pupils{ opacity:0; }
+.mascot[data-mood="cheer"] .m-arm-l{ transform:rotate(62deg); }
+.mascot[data-mood="cheer"] .m-arm-r{ transform:rotate(-62deg); }
+.mascot[data-mood="cheer"] .m-rig{ animation:m-jump .62s cubic-bezier(.3,.7,.4,1) 3; }
+.mascot[data-mood="cheer"] .m-shadow{ animation:m-jump-shadow .62s cubic-bezier(.3,.7,.4,1) 3; }
+.mascot[data-mood="cheer"] .m-sparks{ opacity:1; animation:m-twinkle .9s ease-in-out infinite; transform-origin:60px 40px; }
+
+/* worry: brows up, a sweat drop, arms droop — concerned, never alarmed */
+.mascot[data-mood="worry"] .m-flat,
+.mascot[data-mood="worry"] .m-brows{ opacity:1; }
+.mascot[data-mood="worry"] .m-pupils{ transform:translate(-1px,2px); }
+.mascot[data-mood="worry"] .m-arm-l{ transform:rotate(-28deg); }
+.mascot[data-mood="worry"] .m-arm-r{ transform:rotate(28deg); }
+.mascot[data-mood="worry"] .m-rig{ animation:m-shiver .5s var(--ease) 2, m-bob 3.2s ease-in-out 1s infinite; }
+.mascot[data-mood="worry"] .m-sweat{ opacity:1; animation:m-sweat 1.6s ease-in infinite; }
+
+@keyframes m-bob{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-4px); } }
+@keyframes m-shadow{ 0%,100%{ transform:scaleX(1); opacity:.1; } 50%{ transform:scaleX(.86); opacity:.07; } }
+@keyframes m-blink{ 0%,93%,100%{ transform:scaleY(1); } 96%{ transform:scaleY(.1); } }
+@keyframes m-wave{
+  0%{ transform:rotate(0); } 14%{ transform:rotate(-118deg); } 28%{ transform:rotate(-86deg); }
+  42%{ transform:rotate(-118deg); } 56%{ transform:rotate(-86deg); } 70%{ transform:rotate(-118deg); } 100%{ transform:rotate(0); }
+}
+@keyframes m-lean{ 0%,100%{ transform:none; } 15%,70%{ transform:rotate(-4deg); } }
+@keyframes m-sway{ 0%,100%{ transform:rotate(-3deg); } 50%{ transform:rotate(3deg) translateY(-2px); } }
+@keyframes m-dot{ 0%,100%{ opacity:0; transform:translateY(3px); } 50%{ opacity:1; transform:none; } }
+@keyframes m-jump{
+  0%{ transform:none; } 18%{ transform:scale(1.08,.9); } 50%{ transform:translateY(-16px) scale(.96,1.05); }
+  82%{ transform:scale(1.06,.93); } 100%{ transform:none; }
+}
+@keyframes m-jump-shadow{ 0%,100%{ transform:none; } 50%{ transform:scaleX(.6); opacity:.05; } }
+@keyframes m-twinkle{ 0%,100%{ opacity:.35; transform:scale(.92); } 50%{ opacity:1; transform:scale(1.06); } }
+@keyframes m-shiver{ 0%,100%{ transform:none; } 25%{ transform:translateX(-2px) rotate(-2deg); } 75%{ transform:translateX(2px) rotate(2deg); } }
+@keyframes m-sweat{ 0%{ transform:translateY(-2px); opacity:0; } 25%{ opacity:1; } 100%{ transform:translateY(10px); opacity:0; } }
+
+.intro-mascot{ width:96px; height:96px; margin:0 auto 8px; }
+
+/* The coach: pops up in the corner to react, then leaves. */
+.coach{
+  position:fixed; right:calc(18px + var(--safe-r)); bottom:calc(96px + var(--safe-b) + var(--kb));
+  z-index:59; display:flex; align-items:flex-end; gap:4px; pointer-events:none;
+  opacity:0; visibility:hidden; transform:translateY(26px) scale(.8); transform-origin:right bottom;
+  transition:opacity .22s var(--ease), transform .34s cubic-bezier(.34,1.56,.64,1), visibility 0s .34s;
+}
+.coach.in{ opacity:1; visibility:visible; transform:none; transition:opacity .22s var(--ease), transform .34s cubic-bezier(.34,1.56,.64,1), visibility 0s; }
+.coach.out{ opacity:0; transform:translateY(14px) scale(.9); }
+.coach .mascot{ width:80px; height:80px; flex:none; }
+.coach-say{
+  margin-bottom:50px; max-width:220px; padding:9px 13px;
+  background:var(--surface); border:1px solid var(--line); border-radius:14px 14px 4px 14px;
+  box-shadow:var(--sh-md); font-size:13.5px; font-weight:600; color:var(--ink);
+}
+.coach.hop .coach-say{ animation:pop .45s cubic-bezier(.34,1.56,.64,1); }
+@media (max-width:560px){
+  .intro-mascot{ width:76px; height:76px; margin-bottom:4px; }
+  /* On a phone the bottom belongs to the composer; the coach drops in from
+     under the top bar instead. */
+  .coach{
+    right:calc(10px + var(--safe-r)); bottom:auto; top:calc(var(--topbar-h) + var(--safe-t) + 8px);
+    align-items:center; transform:translateY(-22px) scale(.8); transform-origin:right top;
+  }
+  .coach.out{ transform:translateY(-12px) scale(.9); }
+  .coach .mascot{ width:60px; height:60px; }
+  .coach-say{ margin-bottom:0; font-size:13px; border-radius:14px 4px 14px 14px; }
+}
+
+/* ── Today: daily goal ring + streak ───────────────── */
+.today-stats{
+  display:flex; align-items:center; gap:8px; margin-left:auto; flex:none;
+  border:0; background:none; padding:2px; border-radius:999px; color:inherit; font:inherit; cursor:pointer;
+  transition:scale .12s var(--ease);
+}
+.today-stats:active{ scale:.96; }
+.today-stats:focus-visible{ outline:2px solid var(--iris); outline-offset:2px; }
+.today-stats:hover .streak{ box-shadow:0 0 0 2px var(--honey-100), 0 0 0 3px var(--honey); }
+.today-stats:hover .streak.cold{ box-shadow:0 0 0 2px var(--line-2), 0 0 0 3px var(--line); }
+.streak-unit{ font-family:var(--font-body); font-size:12px; font-weight:600; margin-left:3px; }
+.today-stats:not([hidden]) + .controls{ margin-left:0; }
+.goal-ring{ position:relative; width:32px; height:32px; flex:none; display:grid; place-items:center; }
+.goal-ring svg{ position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg); }
+.gr-track{ fill:none; stroke:var(--line); stroke-width:3.5; }
+.gr-fill{
+  fill:none; stroke:var(--violet); stroke-width:3.5; stroke-linecap:round; stroke-dasharray:0 100;
+  transition:stroke-dasharray .9s var(--ease), stroke .3s var(--ease);
+}
+.goal-ring b{ position:relative; font-family:var(--font-mono); font-size:10px; font-weight:700; color:var(--ink); font-variant-numeric:tabular-nums; }
+.goal-ring.full .gr-fill{ stroke:var(--green); }
+.goal-ring.full b{ color:var(--green); font-size:13px; }
+.goal-ring.pop{ animation:pop .6s cubic-bezier(.34,1.56,.64,1); }
+
+.streak{
+  display:inline-flex; align-items:center; gap:3px; height:32px; padding:0 11px 0 8px; border-radius:999px;
+  background:var(--honey-100); color:var(--honey);
+  font-family:var(--font-display); font-weight:700; font-size:14px; font-variant-numeric:tabular-nums;
+}
+.streak svg{ width:18px; height:18px; flex:none; overflow:visible; }
+.streak .fl-out{ fill:currentColor; }
+.streak .fl-in{ fill:#ffd88a; }
+.streak svg{ transform-origin:50% 90%; animation:flicker 2.4s ease-in-out infinite; }
+/* Not logged today yet: the streak is alive but waiting, so the flame is out. */
+.streak.cold{ background:var(--line-2); color:var(--faint); }
+.streak.cold .fl-in{ fill:var(--line); }
+.streak.cold svg{ animation:none; }
+.streak.pop{ animation:pop .6s cubic-bezier(.34,1.56,.64,1); }
+.streak.pop svg{ animation:flame-up .7s cubic-bezier(.34,1.56,.64,1); }
+@keyframes flicker{ 0%,100%{ transform:scale(1) rotate(0); } 30%{ transform:scale(1.04,.97) rotate(-2deg); } 60%{ transform:scale(.97,1.05) rotate(2deg); } }
+@keyframes flame-up{ 0%{ transform:scale(.6); } 55%{ transform:scale(1.45) translateY(-2px); } 100%{ transform:none; } }
+@media (max-width:560px){
+  .today-stats{ gap:5px; }
+  .goal-ring{ width:28px; height:28px; }
+  .streak{ height:28px; padding:0 8px 0 5px; font-size:13px; }
+  .streak svg{ width:15px; height:15px; }
+  /* The plan header has to fit the goal ring and streak; language is one tap
+     away in Settings, so its switch steps out of the bar here. */
+  body[data-stage="plan"] .topbar .lang-switch{ display:none; }
+}
+@media (max-width:400px){ .streak-unit{ display:none; } }
+
+/* The explainer card under the streak and ring. */
+.today-pop{
+  position:fixed; z-index:61; width:300px; padding:16px;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); box-shadow:var(--sh-lg);
+  display:grid; gap:14px; animation:rise .22s var(--ease) both; transform-origin:top right;
+}
+@media (max-width:560px){ .today-pop{ left:12px; right:12px !important; width:auto; } }
+.tp-row{ display:flex; align-items:center; gap:12px; }
+.tp-row b{ display:block; font-family:var(--font-display); font-size:16px; color:var(--ink); }
+.tp-row p{ margin:2px 0 0; font-size:13px; color:var(--muted); line-height:1.4; }
+.tp-flame{
+  width:44px; height:44px; flex:none; border-radius:14px; display:grid; place-items:center;
+  background:var(--honey-100); color:var(--honey);
+}
+.tp-flame svg{ width:26px; height:26px; }
+.tp-flame .fl-out{ fill:currentColor; } .tp-flame .fl-in{ fill:#ffd88a; }
+.tp-flame.cold{ background:var(--line-2); color:var(--faint); } .tp-flame.cold .fl-in{ fill:var(--line); }
+.tp-ring{ position:relative; width:44px; height:44px; flex:none; }
+.tp-ring svg{ width:100%; height:100%; transform:rotate(-90deg); }
+.tp-ring.full .gr-fill{ stroke:var(--green); }
+.tp-week ol{ list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+.tp-week li{ display:grid; justify-items:center; gap:4px; font-size:10.5px; font-weight:600; color:var(--faint); }
+.tp-week li i{
+  width:26px; height:26px; border-radius:50%; display:grid; place-items:center;
+  background:var(--line-2); border:1.5px dashed var(--line);
+}
+.tp-week li.on i{ background:var(--honey-100); border:1.5px solid var(--honey); color:var(--honey); }
+.tp-week li i svg{ width:15px; height:15px; }
+.tp-week li i .fl-out{ fill:currentColor; } .tp-week li i .fl-in{ fill:#ffd88a; }
+.tp-week li.is-today span{ color:var(--ink); }
+.tp-week li.is-today i{ border-color:var(--violet); }
+.tp-week li.on.is-today i{ border-color:var(--honey); box-shadow:0 0 0 3px var(--violet-100); }
+
 /* ── Reduced motion ─────────────────────────────────── */
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; }
+  /* Decoration with nothing to say once it stands still. */
+  .burst,.toast-timer,.build-skel{ display:none; }
+  .mascot *{ animation:none !important; }
 }
