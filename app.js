@@ -48,7 +48,8 @@ function setLang(lang) {
   applyI18n();
   syncAccount();
   syncToday();
-  if (!state.started) setChips(t("starters"));
+  syncGreetingMsg();
+  renderChatList(); // group headings and the empty-list line are translated text
   refreshMeter();
   if (state.plan) {
     renderGoalBand(state.plan);
@@ -56,6 +57,23 @@ function setLang(lang) {
     renderKit(state.plan.setupItems || [], state.plan.budget);
     renderWeek();
   }
+}
+
+// The opening line: by name when the user has given one, in the current language.
+function greetingText() {
+  const name = (lsGet("startai_name") || "").trim();
+  return name ? fmt(t("greeting_named"), { name }) : t("greeting");
+}
+// The opening line follows the language, in the log and in the saved chat.
+function syncGreetingMsg() {
+  document.querySelectorAll("#chatLog .turn.greeting .bubble").forEach((b) => { b.textContent = greetingText(); });
+  const c = activeChat();
+  if (!c) return;
+  let changed = false;
+  (c.messages || []).forEach((m) => {
+    if (m.x === "greeting" && m.t !== greetingText()) { m.t = greetingText(); changed = true; }
+  });
+  if (changed) saveHistory();
 }
 
 // ── theme ──
@@ -143,6 +161,7 @@ function lower(s) {
 // guessed at from its HTTP status.
 const ERR_TEXT = {
   NETWORK: "err_network",
+  TIMEOUT: "err_timeout",
   AI_UNAVAILABLE: "err_ai_unavailable",
   AI_RATE_LIMITED: "err_rate_limited",
   DAILY_QUOTA_EXCEEDED: "err_quota",
@@ -158,7 +177,7 @@ const ERR_TEXT = {
   SERVER_ERROR: "err_server",
 };
 // Worth offering a retry button for; the rest are either automatic or final.
-const RETRYABLE = { NETWORK: 1, AI_UNAVAILABLE: 1, AI_RATE_LIMITED: 1, INTERNAL_ERROR: 1, SERVER_ERROR: 1 };
+const RETRYABLE = { NETWORK: 1, TIMEOUT: 1, SPEND_CAP_REACHED: 1, AI_UNAVAILABLE: 1, AI_RATE_LIMITED: 1, INTERNAL_ERROR: 1, SERVER_ERROR: 1 };
 
 function apiErr(code, safeMessage, status) {
   const e = new Error(code);
@@ -238,12 +257,19 @@ const NEVER_RETRY = { DAILY_QUOTA_EXCEEDED: 1, SPEND_CAP_REACHED: 1 };
 async function rawApi(path, opts) {
   const headers = { "Content-Type": "application/json" };
   if (state.token) headers.Authorization = "Bearer " + state.token;
+  // `timeoutMs` is ours, not fetch's: a chat turn can take the AI up to 55 s,
+  // so it gets 60 s before the wait is called off and reported as a timeout.
+  const { timeoutMs, ...fetchOpts } = opts || {};
+  const ctl = timeoutMs ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), timeoutMs) : null;
   let res;
   try {
-    res = await fetch(API + path, { headers, ...opts });
+    res = await fetch(API + path, { headers, ...fetchOpts, signal: ctl ? ctl.signal : undefined });
   } catch (_) {
     // A live request that fails stays failed. It never falls back to the mock.
-    throw apiErr("NETWORK");
+    throw apiErr(ctl && ctl.signal.aborted ? "TIMEOUT" : "NETWORK");
+  } finally {
+    clearTimeout(timer);
   }
   if (!res.ok) throw await readError(res);
   try {
@@ -526,12 +552,20 @@ function syncSoundButtons() {
 // Kept on this device, across every chat: minutes logged per calendar day.
 // A streak is the run of days with anything logged, ending today — or ending
 // yesterday, in which case it is still alive but today has not counted yet.
-const ACTIVITY_KEY = "startai_activity";
-function activity() {
+// Each chat is its own goal, so each keeps its own streak: minutes logged
+// per day, filed under the chat id. (v1 kept one streak for the whole device.)
+const ACTIVITY_KEY = "startai_activity_v2";
+const LEGACY_ACTIVITY_KEY = "startai_activity";
+lsDel(LEGACY_ACTIVITY_KEY); // the old device-wide streak cannot be split per chat
+function allActivity() {
   try {
     const a = JSON.parse(lsGet(ACTIVITY_KEY) || "{}");
-    return a && typeof a.days === "object" && a.days ? a : { days: {} };
-  } catch (_) { return { days: {} }; }
+    return a && typeof a.chats === "object" && a.chats ? a : { chats: {} };
+  } catch (_) { return { chats: {} }; }
+}
+function activity(chatId) {
+  const r = allActivity().chats[chatId || activeChatId];
+  return r && typeof r.days === "object" && r.days ? r : { days: {} };
 }
 function streakInfo(a) {
   const days = (a || activity()).days;
@@ -551,14 +585,19 @@ function dailyGoal() {
 }
 // Record one logged session and say what it changed.
 function logActivity(minutes) {
+  if (!activeChatId) return {};
+  const all = allActivity();
   const a = activity();
+  all.chats[activeChatId] = a;
+  // Chats that no longer exist take their streaks with them.
+  Object.keys(all.chats).forEach((id) => { if (!chats.some((c) => c.id === id)) delete all.chats[id]; });
   const today = isoToday();
   const before = { streak: streakInfo(a), min: a.days[today] || 0 };
   a.days[today] = before.min + Math.max(1, minutes || 0);
   // Two months is plenty to count any streak worth showing.
   const cutoff = addDays(today, -60);
   Object.keys(a.days).forEach((d) => { if (d < cutoff) delete a.days[d]; });
-  lsSet(ACTIVITY_KEY, JSON.stringify(a));
+  lsSet(ACTIVITY_KEY, JSON.stringify(all));
   const goal = dailyGoal();
   return {
     streak: streakInfo(a).n,
@@ -657,10 +696,30 @@ function closeTodayPop() {
 }
 
 // ── Chat ──
-function scrollChat() {
+// The log stays pinned to the newest message. Pinning is a state, not a
+// one-off jump: the chips and the question note appear just after a reply
+// and shrink the log, so every later resize or new node re-pins it — unless
+// the user has scrolled up to read, which unpins it until they come back down.
+let chatPinned = true;
+function pinChat() {
   const log = $("chatLog");
-  log.scrollTop = log.scrollHeight;
+  log.scrollTo({ top: log.scrollHeight, behavior: "instant" });
 }
+function scrollChat() {
+  chatPinned = true;
+  pinChat();
+  requestAnimationFrame(pinChat);
+}
+(function watchChat() {
+  const log = $("chatLog");
+  if (!log) return;
+  log.addEventListener("scroll", () => {
+    chatPinned = log.scrollHeight - log.scrollTop - log.clientHeight < 48;
+  }, { passive: true });
+  const repin = () => { if (chatPinned) pinChat(); };
+  if ("ResizeObserver" in window) new ResizeObserver(repin).observe(log);
+  new MutationObserver(repin).observe(log, { childList: true, subtree: true, characterData: true });
+})();
 function addMsg(text, who, extra = "") {
   const log = $("chatLog");
   const turn = el("div", `turn ${who} ${extra}`);
@@ -731,7 +790,7 @@ function setChips(options) {
   (options || []).forEach((opt) => {
     const action = opt && typeof opt === "object";
     const label = action ? opt.label : opt;
-    const c = el("button", "chip" + (action ? " chip-action" : ""), esc(label));
+    const c = el("button", "chip" + (action ? " chip-action" : "") + (action && opt.primary ? " chip-primary" : ""), esc(label));
     c.type = "button";
     c.onclick = action ? opt.onClick : () => send(label);
     box.appendChild(c);
@@ -797,9 +856,17 @@ function announce(msg) {
 }
 
 let busy = false;
+// Past the daily quota the composer stays shut, and says why.
+let quotaLocked = false;
+function lockComposer(reason) {
+  quotaLocked = true;
+  $("input").disabled = true;
+  $("input").placeholder = reason;
+  $("sendBtn").disabled = true;
+}
 function setBusy(b) {
   busy = b;
-  $("input").disabled = b;
+  $("input").disabled = b || quotaLocked;
   $("sendBtn").disabled = b || !$("input").value.trim();
 }
 
@@ -975,6 +1042,7 @@ function resetWorkspace() {
   $("kitContent").innerHTML = ""; $("kitEmpty").hidden = false;
   $("weekContent").hidden = true; $("weekEmpty").hidden = false;
   $("rollMsg").hidden = true;
+  if ($("dayBanner")) $("dayBanner").hidden = true;
   $("goalBand").classList.remove("shifted");
   $("scheduleBtn").disabled = true; $("emptyScheduleBtn").disabled = true;
   $("confirmBtn").disabled = true; $("icsBtn").hidden = true;
@@ -1014,10 +1082,12 @@ async function openChat(id) {
   resetWorkspace();
   renderChatList();
 
-  (c.messages || []).forEach((m) => addMsg(m.t, m.w, m.x));
-  setChips(c.chips || []);
-  renderTurnState(c.turnState || null);
+  (c.messages || []).forEach((m) => addMsg(m.x === "greeting" ? greetingText() : m.t, m.w, m.x));
   state.started = (c.messages || []).some((m) => m.w === "user");
+  // Before the first message the only chips ever saved were the old starter
+  // suggestions, which are gone; later chips are the assistant's own options.
+  setChips(state.started ? c.chips || [] : []);
+  renderTurnState(c.turnState || null);
 
   if (DEMO_MODE) {
     DEMO_DB.intake = c.intake ? { ...c.intake } : null;
@@ -1034,6 +1104,7 @@ async function openChat(id) {
       setStage("plan");
       setDock(false);
       switchTab("plan");
+      dailyRollover();
     } catch (e) {
       handleApiError(e);
     }
@@ -1312,13 +1383,14 @@ async function clearAllChats() {
   chats = [];
   activeChatId = null;
   saveHistory();
+  lsDel(ACTIVITY_KEY);
   if (DEMO_MODE) { DEMO_DB.plans = {}; DEMO_DB.calendars = {}; DEMO_DB.intake = null; }
   await startNewChat();
   syncSettings();
   toast(t("done_clear"), "ok");
 }
 async function resetAppData() {
-  ["startai_name", "startai_sidebar", "startai_uid", "startai_lang", "startai_sound", ACTIVITY_KEY].forEach((k) => lsDel(k));
+  ["startai_name", "startai_sidebar", "startai_uid", "startai_lang", "startai_sound", ACTIVITY_KEY, LEGACY_ACTIVITY_KEY].forEach((k) => lsDel(k));
   lsSet("startai_theme", "system");
   applyTheme("system");
   setLang("en");
@@ -1354,9 +1426,13 @@ async function ensureSession(greet) {
     state.token = lsGet("startai_token") || null;
     const r = await newSession();
     if (greet) {
-      if (r.assistant) { addMsg(r.assistant, "ai"); logMsg(r.assistant, "ai", ""); }
-      setChips(t("starters"));
-      persistChips(t("starters"));
+      // The greeting is the app's own line, not the server's: the server says
+      // it once, in the language of the moment, and it would stay that way
+      // after a language switch. Marked, so a switch or a replay re-renders it.
+      addMsg(greetingText(), "ai", "greeting");
+      logMsg(greetingText(), "ai", "greeting");
+      setChips([]);
+      persistChips([]);
     }
     refreshMeter();
   } catch (e) {
@@ -1391,16 +1467,35 @@ async function boot() {
   await startNewChat();
 }
 
-async function send(text) {
+// Which buttons a turn offers. The recap asks for approval, so its first
+// option is the primary one; out of scope always offers a fresh start.
+function turnChips(turn) {
+  const opts = Array.isArray(turn.options) ? turn.options.filter((o) => typeof o === "string" && o.trim()) : [];
+  if (turn.stage === "confirm_plan") {
+    return opts.map((o, i) => ({ label: o, primary: i === 0, onClick: () => send(o) }));
+  }
+  if (turn.stage === "out_of_scope") {
+    return [...opts, { label: t("btn_start_over"), onClick: () => startNewChat() }];
+  }
+  return opts;
+}
+
+async function send(text, retry) {
   const msg = (text != null ? text : $("input").value).trim();
-  if (!msg || busy) return;
+  if (!msg || busy || quotaLocked) return;
   state.started = true;
   $("input").value = "";
   $("sendBtn").disabled = true;
   setChips([]);
   if (!dockIsOpen()) setDock(true); // never answer into a closed drawer
-  addMsg(msg, "user");
-  logMsg(msg, "user", "");
+  if (retry) {
+    // The same question again: its bubble is already there; the failure note goes.
+    const failed = $("chatLog").querySelectorAll(".turn.declined");
+    if (failed.length) failed[failed.length - 1].remove();
+  } else {
+    addMsg(msg, "user");
+    logMsg(msg, "user", "");
+  }
   setBusy(true);
   setMood($("introMascot"), "think");
   const typing = addTyping();
@@ -1409,13 +1504,16 @@ async function send(text) {
     const turn = await api("/api/chat", {
       method: "POST",
       body: JSON.stringify({ userId: state.userId, sessionId: state.sessionId, message: msg, lang: LANG }),
+      timeoutMs: 60000,
     });
     typing.remove();
     // out_of_scope is a normal conversational turn — a redirect back to
     // learning goals — not a failure, so it is never styled as one.
-    addMsg(turn.assistant, "ai");
-    logMsg(turn.assistant, "ai", "");
-    setChips(turn.options);
+    // The recap before building is a card to approve, not just another line.
+    const recap = turn.stage === "confirm_plan" ? "recap" : "";
+    addMsg(turn.assistant, "ai", recap);
+    logMsg(turn.assistant, "ai", recap);
+    setChips(turnChips(turn));
     persistChips(turn.options);
     const st = turnState(turn);
     renderTurnState(st);
@@ -1442,7 +1540,12 @@ async function send(text) {
       // the new content instead of dropping it on <body> with the composer.
       announce(t("plan_ready_sr"));
       $("gbTitle").focus();
+    } else if (state.planId && (turn.planChanged || turn.scheduleChanged)) {
+      // Once a plan exists the chat edits it. Refetch only what changed.
+      if (turn.planChanged) await loadPlan(state.planId, { animate: false });
+      else await loadCalendar();
     }
+    if (state.planId && turn.changeType && turn.changeType !== "plan_question") toast(t("toast_plan_updated"), "ok");
     syncActiveChat();
     refreshMeter();
   } catch (e) {
@@ -1450,6 +1553,8 @@ async function send(text) {
     const b = $("chatLog").querySelector(".turn.building");
     if (b) b.remove();
     addMsg(errText(e), "ai", "declined");
+    if (e.code === "DAILY_QUOTA_EXCEEDED") lockComposer(errText(e));
+    else if (RETRYABLE[e.code]) setChips([{ label: t("btn_retry"), onClick: () => { setChips([]); send(msg, true); } }]);
   } finally {
     setBusy(false);
     setMood($("introMascot"), "idle");
@@ -1503,20 +1608,47 @@ function planProgress() {
 // Demo mode has no backend to render .ics, so the browser builds it. The
 // button behaves the same either way instead of vanishing.
 let icsUrl = null;
+function icsName() {
+  const slug = String((state.plan && state.plan.skill) || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return "start-ai-" + (slug || "plan") + ".ics";
+}
+// The export needs the bearer header, which a plain <a href> cannot send, so
+// it is fetched and handed over as a file.
+async function downloadIcs(ev) {
+  ev.preventDefault();
+  if (!state.planId) return;
+  try {
+    const headers = state.token ? { Authorization: "Bearer " + state.token } : {};
+    let res;
+    try { res = await fetch(API + "/api/plan/" + state.planId + "/ics", { headers }); }
+    catch (_) { throw apiErr("NETWORK"); }
+    if (!res.ok) throw await readError(res);
+    const url = URL.createObjectURL(await res.blob());
+    const a = el("a");
+    a.href = url;
+    a.download = icsName();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  } catch (e) { handleApiError(e); }
+}
 function refreshIcs() {
   const btn = $("icsBtn");
   if (!DEMO_MODE) {
-    btn.href = API + "/api/plan/" + state.planId + "/ics";
+    btn.href = "#";
     btn.removeAttribute("download");
+    btn.onclick = downloadIcs;
     btn.hidden = false;
     return;
   }
+  btn.onclick = null;
   const evs = state.events || [];
   if (!evs.length || !state.plan) { btn.hidden = true; return; }
   if (icsUrl) URL.revokeObjectURL(icsUrl);
   icsUrl = URL.createObjectURL(new Blob([buildIcs(state.plan, evs)], { type: "text/calendar;charset=utf-8" }));
   btn.href = icsUrl;
-  btn.download = (String(state.plan.skill || "plan").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "plan") + ".ics";
+  btn.download = icsName();
   btn.hidden = false;
 }
 function buildIcs(plan, events) {
@@ -1568,11 +1700,19 @@ function sessionsPerWeek(p) {
   return (p.todos || []).reduce((n, td) => n + (per[td.frequency] != null ? per[td.frequency] : 1), 0);
 }
 
+// "unknown" (or nothing) shows no badge: no verdict beats a guessed one.
+const FEAS = { feasible: "feas_feasible", tight: "feas_tight", insufficient: "feas_insufficient" };
+
 // ── Goal band: the promise, on every tab ──
 function renderGoalBand(p) {
   const f = planFacts(p);
   $("gbTitle").textContent = p.skill;
   $("gbTrack").textContent = f.track;
+  let feas = $("gbFeas");
+  if (!feas) { feas = el("span", "gb-feas"); feas.id = "gbFeas"; $("gbTrack").after(feas); }
+  const fk = FEAS[p.feasibilityStatus];
+  feas.hidden = !fk;
+  if (fk) { feas.dataset.s = p.feasibilityStatus; feas.textContent = t(fk); }
 
   const chips = $("gbChips");
   chips.innerHTML = "";
@@ -1667,8 +1807,13 @@ function renderPlan(p) {
   box.innerHTML = "";
 
   const head = el("div", "plan-intro");
+  // The timeline's own bad news comes first and is not softened.
+  const warn = [];
+  if (p.missesDeadline && p.deadlineNote) warn.push(String(p.deadlineNote));
+  if (Number.isFinite(p.droppedSessions) && p.droppedSessions > 0) warn.push(fmt(t("sched_dropped"), { n: p.droppedSessions }));
   head.innerHTML =
-    `<p class="assessment">${esc(p.assessment)}</p>
+    `${warn.length ? `<div class="reality deadline">${WARN_SVG}<span>${esc(warn.join(" "))}</span></div>` : ""}
+     <p class="assessment">${esc(p.assessment)}</p>
      ${p.feasibility ? `<div class="reality">${WARN_SVG}<span>${esc(p.feasibility)}</span></div>` : ""}`;
   box.appendChild(head);
 
@@ -1724,6 +1869,20 @@ function renderPlan(p) {
   (p.todos || []).forEach((td, i) => {
     colTasks.appendChild(todoRow(td, i, stats[td.id] || stats[td.title] || null));
   });
+
+  // What changed and when, newest first.
+  const log = (Array.isArray(p.changeLog) ? p.changeLog : []).filter((c) => c && c.summary).slice(-8).reverse();
+  if (log.length) {
+    const hist = el("section", "history");
+    hist.appendChild(el("div", "section-label", esc(t("history"))));
+    const list = el("ol", "hist-list");
+    log.forEach((c) => {
+      const d = String(c.at || "").slice(0, 10);
+      list.appendChild(el("li", "", `<time>${/^\d{4}-\d{2}-\d{2}$/.test(d) ? esc(prettyDate(d)) : ""}</time><span>${esc(c.summary)}</span>`));
+    });
+    hist.appendChild(list);
+    box.appendChild(hist);
+  }
 
   updateSpineFinish(p);
 }
@@ -1832,10 +1991,12 @@ function renderKit(items, budget) {
          <div class="setup-row">
            <span class="setup-name">${esc(s.name)}</span>
            ${affordable ? "" : `<span class="setup-over">${esc(t("kit_item_over"))}</span>`}
+           ${s.owned ? `<span class="setup-owned">${esc(t("kit_owned"))}</span>` : ""}
            <span class="setup-price">${esc(s.priceRange)}</span>
          </div>
          ${s.category ? `<div class="setup-cat">${esc(s.category)}</div>` : ""}
          <div class="setup-why">${esc(s.rationale)}</div>
+         ${s.owned || s.hi === 0 ? "" : shopLinks(s.links)}
        </div>`;
     box.appendChild(c);
   });
@@ -1858,6 +2019,38 @@ function renderKit(items, budget) {
   }
   box.appendChild(foot);
   if (animateRows) countUpWhenSeen(foot);
+  renderResources(box);
+}
+
+// Shop links open the shop's own SEARCH for the item, not a checked product,
+// so they never carry a price, "Buy" or stock claims. https only.
+const PROVIDERS = { uzum: "Uzum Market", yandex_market: "Yandex Market", coursera: "Coursera", udemy: "Udemy", stepik: "Stepik" };
+function shopLinks(links) {
+  const ok = (Array.isArray(links) ? links : []).filter((l) => l && typeof l.url === "string" && /^https:\/\//i.test(l.url));
+  if (!ok.length) return "";
+  return `<div class="shop-links"><span>${esc(t("kit_search_in"))}</span>${ok.map((l) =>
+    `<a class="shop-pill" href="${esc(l.url)}" target="_blank" rel="noopener noreferrer">${esc(PROVIDERS[l.provider] || l.label || l.provider || "")}</a>`
+  ).join("")}</div>`;
+}
+// What the plan actually uses, and what it swapped in for the recommendation.
+function renderResources(box) {
+  const list = (state.plan && Array.isArray(state.plan.resources) ? state.plan.resources : [])
+    .filter((r) => r && (r.selected || r.recommended));
+  if (!list.length) return;
+  box.appendChild(el("div", "section-label kit-res-label", esc(t("res_title"))));
+  list.forEach((r, i) => {
+    const swapped = r.recommended && r.selected && r.selected !== r.recommended;
+    const c = el("div", "res-card");
+    if (animateRows) c.style.animationDelay = i * 0.05 + "s";
+    c.innerHTML =
+      `${r.need ? `<div class="setup-cat">${esc(r.need)}</div>` : ""}
+       <div class="res-name">${esc(r.selected || r.recommended)}</div>
+       ${swapped ? `<div class="res-was">${esc(t("res_was"))} <s>${esc(r.recommended)}</s></div>` : ""}
+       ${r.equivalent === false ? `<div class="res-warn">${WARN_SVG}<span>${esc(t("res_not_equal"))}</span></div>` : ""}
+       ${r.note ? `<div class="setup-why">${esc(r.note)}</div>` : ""}
+       ${shopLinks(r.links)}`;
+    box.appendChild(c);
+  });
 }
 
 // A count-up nobody sees is wasted, and the Kit tab is often not the one
@@ -2098,7 +2291,7 @@ function renderWeek() {
       (byCell[d + "@" + hh] || []).forEach((e) => {
         // proposed = not yet confirmed; shown provisionally, not as settled.
         const cls = e.status === "done" ? " done"
-          : e.status === "rolled_over" ? " missed"
+          : e.status === "rolled_over" || e.status === "skipped" ? " missed"
           : e.status === "proposed" ? " proposed"
           : (e.movedFrom ? " moved" : "");
         const s = el("div", "sess" + cls);
@@ -2114,7 +2307,8 @@ function renderWeek() {
         s.title = label;
         s.setAttribute("role", "img");
         s.setAttribute("aria-label", label);
-        s.innerHTML = `<b>${esc(e.title)}</b><span class="dur">${esc(e.startTime)} · ${e.durationMin ? esc(durText(e.durationMin)) : esc(tg("status", e.status))}</span>`;
+        s.innerHTML = `<b>${esc(e.title)}</b><span class="dur">${esc(e.startTime)} · ${e.durationMin ? esc(durText(e.durationMin)) : esc(tg("status", e.status))}</span>`
+          + (Number.isFinite(e.rolledOver) && e.rolledOver > 0 ? `<span class="moved-chip">${esc(fmt(t("rolled_chip"), { n: e.rolledOver }))}</span>` : "");
         cell.appendChild(s);
       });
       grid.appendChild(cell);
@@ -2157,6 +2351,38 @@ function goToday() {
   const hi = mondayOf(dates[dates.length - 1]);
   state.weekStart = clampWeek(mondayOf(isoToday()), lo, hi);
   renderWeek();
+}
+
+// ── Daily catch-up ──
+// Once a day, on opening a plan, past sessions left undone roll forward. The
+// debug button below simulates a missed day; this is the real thing.
+async function dailyRollover() {
+  if (!state.planId) return;
+  const today = isoToday();
+  if (lsGet("startai_rollover_day") === today) return;
+  try {
+    const r = await api("/api/rollover", { method: "POST", body: "{}" });
+    lsSet("startai_rollover_day", today);
+    const hits = (r && Array.isArray(r.results) ? r.results : []).filter((x) => x && x.moved > 0);
+    if (!hits.length) return;
+    await loadPlan(state.planId, { animate: false });
+    const mine = hits.find((x) => x.planId === state.planId) || hits[0];
+    showDayBanner(mine.message || fmt(t("roll_auto"), { n: mine.moved }));
+  } catch (_) { /* not marked done, so the next load tries again */ }
+}
+function showDayBanner(msg) {
+  let b = $("dayBanner");
+  if (!b) {
+    b = el("div", "day-banner");
+    b.id = "dayBanner";
+    b.setAttribute("role", "status");
+    b.innerHTML = `${WARN_SVG}<span class="db-text"></span><button type="button" class="db-close">×</button>`;
+    b.querySelector(".db-close").onclick = () => { b.hidden = true; };
+    $("goalBand").prepend(b);
+  }
+  b.querySelector(".db-text").textContent = msg;
+  b.querySelector(".db-close").setAttribute("aria-label", t("aria_dismiss"));
+  b.hidden = false;
 }
 
 // ── Rollover (debug) ──
@@ -2367,6 +2593,7 @@ $("setName").addEventListener("change", () => {
   const v = $("setName").value.trim();
   if (v) lsSet("startai_name", v); else lsDel("startai_name");
   syncAccount();
+  syncGreetingMsg();
   toast(t("done_saved"), "ok");
 });
 $("themePick").querySelectorAll("button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.themePref)));

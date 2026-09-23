@@ -35,6 +35,9 @@ function intakeText(kind) {
       askTime: "How much time can you invest per day?",
       askDeadline: "By when do you want this done?",
       done: "Got it. I adapted a real-world roadmap to your level, budget, daily time and deadline.",
+      recap: "Here's what I'll plan for: {goal}. Level: {level}. Budget: {budget}. {min} min a day for {months} months. Shall I build it?",
+      free: "free only",
+      confirm: ["Build my plan", "Change something"],
       level: ["Beginner", "Intermediate", "Advanced"],
       budget: ["Free only", "Up to $100", "Up to $500"],
       time: ["30 min/day", "60 min/day", "90 min/day"],
@@ -47,6 +50,9 @@ function intakeText(kind) {
       askTime: "Сколько времени в день вы готовы уделять?",
       askDeadline: "К какому сроку хотите прийти к цели?",
       done: "Принято. Я адаптировал реальный учебный план под ваш уровень, бюджет, время и срок.",
+      recap: "Вот что я учту: {goal}. Уровень: {level}. Бюджет: {budget}. {min} мин в день, {months} мес. Составить план?",
+      free: "только бесплатно",
+      confirm: ["Составить план", "Изменить ответы"],
       level: ["Начальный", "Средний", "Продвинутый"],
       budget: ["Только бесплатно", "До $100", "До $500"],
       time: ["30 мин/день", "60 мин/день", "90 мин/день"],
@@ -59,6 +65,9 @@ function intakeText(kind) {
       askTime: "Kuniga qancha vaqt ajrata olasiz?",
       askDeadline: "Qaysi muddatgacha ulgurmoqchisiz?",
       done: "Qabul qilindi. Haqiqiy yo'l xaritasini daraja, byudjet, vaqt va muddatingizga mosladim.",
+      recap: "Men quyidagilarni hisobga olaman: {goal}. Daraja: {level}. Byudjet: {budget}. Kuniga {min} daqiqa, {months} oy. Reja tuzaymi?",
+      free: "faqat bepul",
+      confirm: ["Reja tuzish", "Javoblarni o'zgartirish"],
       level: ["Boshlang'ich", "O'rta", "Yuqori"],
       budget: ["Faqat bepul", "$100 gacha", "$500 gacha"],
       time: ["30 daqiqa/kun", "60 daqiqa/kun", "90 daqiqa/kun"],
@@ -327,7 +336,29 @@ function planForMessage(message, profile = {}) {
     plannedCount: 0,
     completedCount: 0,
   }));
-  const setupItems = bp.setup;
+  // Shop links are searches, never products; free items carry none.
+  const shopSearch = (q) => [
+    { provider: "uzum", label: "Uzum Market", kind: "search", url: "https://uzum.uz/ru/search?query=" + encodeURIComponent(q) },
+    { provider: "yandex_market", label: "Yandex Market", kind: "search", url: "https://market.yandex.uz/search?text=" + encodeURIComponent(q) },
+  ];
+  const setupItems = bp.setup.map((s, i) => {
+    const hi = Math.max(0, ...((String(s.priceRange || "").match(/\d+/g) || ["0"]).map(Number)));
+    return { id: "kit" + i, owned: false, searchQuery: s.name, ...s, links: hi > 0 ? shopSearch(s.name) : [] };
+  });
+  // One resource kept as recommended, one swapped for a free stand-in when the budget is zero.
+  const paid = setupItems.find((s) => s.links.length);
+  const resources = setupItems.slice(0, 1).map((s) => ({
+    id: "res0", need: s.category || "", kind: "material", recommended: s.name, selected: s.name,
+    rejected: [], source: "blueprint", equivalent: true, note: "", links: s.links,
+  }));
+  if (paid && budget === 0) {
+    resources.push({
+      id: "res1", need: paid.category || "", kind: "material", recommended: paid.name,
+      selected: "Free library / online edition", rejected: [], source: "budget", equivalent: false,
+      note: "Covers most of it, but not everything the paid version does.", links: [],
+    });
+  }
+  const feasibilityStatus = dailyMin <= 30 && months <= 2 ? "tight" : "feasible";
 
   const plan = {
     id: planId,
@@ -347,6 +378,9 @@ function planForMessage(message, profile = {}) {
     milestones,
     todos,
     setupItems,
+    resources,
+    feasibilityStatus,
+    changeLog: [{ at: base, type: "created", summary: "Plan created from your answers." }],
     weeksTotal,
     startDate: null,
     finishDate: null,
@@ -459,6 +493,17 @@ async function mockApi(path, opts = {}) {
       if (i.budget == null) return ask("budget", "Budget");
       if (i.dailyMin == null) return ask("time", "Time");
       if (i.months == null) return ask("deadline", "Deadline");
+      if (!i.approved) {
+        i.step = "confirm";
+        const x = intakeText();
+        return {
+          assistant: x.recap.replace("{goal}", i.goal).replace("{level}", i.level)
+            .replace("{budget}", i.budget ? "$" + i.budget : x.free).replace("{min}", i.dailyMin).replace("{months}", i.months),
+          options: x.confirm,
+          stage: "confirm_plan",
+          progress: { answered: i.answered, max: DEMO_INTAKE_MAX, adaptive: true },
+        };
+      }
       const plan = planForMessage(i.goal, {
         level: i.level, budget: i.budget, dailyMin: i.dailyMin, deadlineMonths: i.months,
       });
@@ -489,6 +534,15 @@ async function mockApi(path, opts = {}) {
     if (st.step === "disambiguation") {
       st.goal = msg;
       Object.assign(st, presetFromGoal(msg));
+      return next();
+    }
+    if (st.step === "confirm") {
+      // "Change something" starts the questions over; anything else approves.
+      if (msg === intakeText().confirm[1]) {
+        Object.assign(st, { level: null, budget: null, dailyMin: null, months: null, answered: 0 });
+      } else {
+        st.approved = true;
+      }
       return next();
     }
     if (st.step === "level") { st.level = parseLevel(msg); st.answered += 1; return next(); }
@@ -567,7 +621,10 @@ async function mockApi(path, opts = {}) {
     if (oldFinish) p.finishDate = addDays(oldFinish, moved.length ? 1 : 0);
     return {
       asOf: body.asOf,
-      results: [{ moved: moved.length, finishShiftDays: moved.length ? 1 : 0, oldFinish, newFinish: p.finishDate }],
+      results: [{
+        planId: pid, moved: moved.length, finishShiftDays: moved.length ? 1 : 0, oldFinish, newFinish: p.finishDate,
+        missesDeadline: false, message: moved.length ? "1 missed session moved to the next free day." : "",
+      }],
     };
   }
 
