@@ -1,9 +1,8 @@
 // ═══ start.ai web client ═══════════════════════════════════════════════
 // Loaded after storage.js, i18n.js and demo-api.js (see index.html).
 const CFG = window.START_AI_CONFIG || {};
-// An empty apiBase is a real answer ("same origin"), not a missing one — so it
-// must not fall through to the hosted fallback.
-const API = typeof CFG.apiBase === "string" ? CFG.apiBase : "https://backend-0v74.onrender.com";
+// "" (or unset) means same origin: /api is proxied to the backend.
+const API = typeof CFG.apiBase === "string" ? CFG.apiBase : "";
 const DEMO_MODE = !!CFG.demoMode;
 // Developer instrumentation stays out of the product unless asked for.
 const DEBUG = new URLSearchParams(location.search).has("debug");

@@ -1,23 +1,34 @@
 // Local dev server: serves this folder and forwards /api to the Go backend.
 //
 // The API sends no CORS headers, so the page has to be on the same origin as
-// the API. In production Vercel does that with a rewrite (vercel.json); this
-// is the same shape, pointed at a backend on localhost.
+// the API. In production api/proxy.js does that on Vercel; this is the same
+// shape, pointed at API_BASE_URL (from the environment or .env).
 //
-//   node dev-server.js                 → http://localhost:5173, API on :8080
-//   node dev-server.js 3000 9090       → port 3000, API on :9090
+//   node dev-server.js                 → http://localhost:5173, API at API_BASE_URL
+//   node dev-server.js 3000 9090       → port 3000; API on localhost:9090 if API_BASE_URL is unset
 //
 // No dependencies, and nothing here ships: it exists so the static files can
 // be opened over http:// instead of file://.
 
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
+const ROOT = __dirname;
+
+// .env fills in whatever the shell has not already set.
+try {
+  for (const line of fs.readFileSync(path.join(ROOT, ".env"), "utf8").split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+    if (m && process.env[m[1]] === undefined) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, "$2");
+  }
+} catch (_) { /* no .env is fine */ }
+
 const PORT = Number(process.argv[2]) || 5173;
 const API_PORT = Number(process.argv[3]) || 8080;
-const API_HOST = process.env.API_HOST || "127.0.0.1";
-const ROOT = __dirname;
+const API = new URL((process.env.API_BASE_URL || "").replace(/\/+$/, "") || `http://127.0.0.1:${API_PORT}`);
+const client = API.protocol === "https:" ? https : http;
 
 const TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -33,8 +44,8 @@ const TYPES = {
 // Anything under /api is the backend's. Streamed both ways, headers intact, so
 // a 4xx from the API reaches the page as itself rather than as a proxy error.
 function proxy(req, res) {
-  const up = http.request(
-    { host: API_HOST, port: API_PORT, path: req.url, method: req.method, headers: { ...req.headers, host: `${API_HOST}:${API_PORT}` } },
+  const up = client.request(
+    { protocol: API.protocol, hostname: API.hostname, port: API.port, path: API.pathname.replace(/\/$/, "") + req.url, method: req.method, headers: { ...req.headers, host: API.host } },
     (r) => {
       res.writeHead(r.statusCode, r.headers);
       r.pipe(res);
@@ -43,7 +54,7 @@ function proxy(req, res) {
   up.on("error", (e) => {
     console.error(`  ✗ ${req.method} ${req.url} → ${e.code}`);
     res.writeHead(502, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: { code: "upstream_unreachable", message: `No backend on ${API_HOST}:${API_PORT} — ${e.code}` } }));
+    res.end(JSON.stringify({ error: { code: "upstream_unreachable", message: `No backend at ${API.origin} — ${e.code}` } }));
   });
   req.pipe(up);
 }
@@ -74,5 +85,5 @@ http
   })
   .listen(PORT, () => {
     console.log(`start.ai  →  http://localhost:${PORT}`);
-    console.log(`/api/*    →  http://${API_HOST}:${API_PORT}`);
+    console.log(`/api/*    →  ${API.origin}${API.pathname.replace(/\/$/, "")}`);
   });
