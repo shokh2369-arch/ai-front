@@ -1344,6 +1344,9 @@ function syncSettings() {
     list.appendChild(li);
   });
 
+  $("setUid").textContent = state.userId || lsGet("startai_uid") || "—";
+  // The policy opens in the language the app is in.
+  document.querySelector("#set-data .set-link").href = "privacy.html?lang=" + LANG;
   const bytes = (lsGet(HISTORY_KEY) || "").length;
   $("setStorage").textContent = fmt(t("set_storage"), { n: bytesText(bytes), c: chats.length });
 }
@@ -2598,6 +2601,17 @@ $("setName").addEventListener("change", () => {
 });
 $("themePick").querySelectorAll("button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.themePref)));
 $("soundPick").querySelectorAll("button").forEach((b) => (b.onclick = () => setSound(b.dataset.sound === "1")));
+$("copyUid").onclick = async () => {
+  const id = $("setUid").textContent;
+  if (!id || id === "—") return;
+  try { await navigator.clipboard.writeText(id); } catch (_) {
+    const r = document.createRange(); r.selectNodeContents($("setUid"));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    return;
+  }
+  $("copyUid").textContent = t("copied");
+  setTimeout(() => { $("copyUid").textContent = t("copy"); }, 1600);
+};
 $("todayStats").onclick = (e) => {
   e.stopPropagation();
   if ($("todayPop").hidden) openTodayPop(); else closeTodayPop();
