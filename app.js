@@ -1,9 +1,8 @@
 // ═══ start.ai web client ═══════════════════════════════════════════════
 // Loaded after storage.js, i18n.js and demo-api.js (see index.html).
 const CFG = window.START_AI_CONFIG || {};
-// An empty apiBase is a real answer ("same origin"), not a missing one — so it
-// must not fall through to the hosted fallback.
-const API = typeof CFG.apiBase === "string" ? CFG.apiBase : "https://backend-0v74.onrender.com";
+// "" (or unset) means same origin: /api is proxied to the backend.
+const API = typeof CFG.apiBase === "string" ? CFG.apiBase : "";
 const DEMO_MODE = !!CFG.demoMode;
 // Developer instrumentation stays out of the product unless asked for.
 const DEBUG = new URLSearchParams(location.search).has("debug");
@@ -1344,6 +1343,9 @@ function syncSettings() {
     list.appendChild(li);
   });
 
+  $("setUid").textContent = state.userId || lsGet("startai_uid") || "—";
+  // The policy opens in the language the app is in.
+  document.querySelector("#set-data .set-link").href = "privacy.html?lang=" + LANG;
   const bytes = (lsGet(HISTORY_KEY) || "").length;
   $("setStorage").textContent = fmt(t("set_storage"), { n: bytesText(bytes), c: chats.length });
 }
@@ -2598,6 +2600,17 @@ $("setName").addEventListener("change", () => {
 });
 $("themePick").querySelectorAll("button").forEach((b) => (b.onclick = () => applyTheme(b.dataset.themePref)));
 $("soundPick").querySelectorAll("button").forEach((b) => (b.onclick = () => setSound(b.dataset.sound === "1")));
+$("copyUid").onclick = async () => {
+  const id = $("setUid").textContent;
+  if (!id || id === "—") return;
+  try { await navigator.clipboard.writeText(id); } catch (_) {
+    const r = document.createRange(); r.selectNodeContents($("setUid"));
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    return;
+  }
+  $("copyUid").textContent = t("copied");
+  setTimeout(() => { $("copyUid").textContent = t("copy"); }, 1600);
+};
 $("todayStats").onclick = (e) => {
   e.stopPropagation();
   if ($("todayPop").hidden) openTodayPop(); else closeTodayPop();

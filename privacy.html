@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Privacy Policy · start.ai</title>
+  <meta name="description" content="How start.ai collects, uses, shares and deletes your data." />
+  <link rel="icon" type="image/png" href="assets/favicon-64.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script>
+    // Same theme as the app, before first paint.
+    (function () {
+      var pref = "system";
+      try { pref = localStorage.getItem("startai_theme") || "system"; } catch (e) {}
+      var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    })();
+  </script>
+  <style>
+    :root{
+      --ink:#17162a; --ink-2:#3a3552; --muted:#6f6a86; --line:#e8e4f2; --line-2:#f0edf9;
+      --canvas:#f3f2f9; --surface:#ffffff; --surface-2:#faf9fe;
+      --violet:#5b46e5; --violet-ink:#3d2cb8; --violet-100:#eeeafe; --violet-200:#dcd4fb;
+      --honey:#8a5308; --honey-100:#fbeed6;
+      --sh-md:0 6px 22px rgba(23,22,42,.08);
+    }
+    :root[data-theme="dark"]{
+      --ink:#f3f1fb; --ink-2:#d6d2e8; --muted:#9c97b4; --line:#2d2a40; --line-2:#242236;
+      --canvas:#101019; --surface:#1a1826; --surface-2:#211f30;
+      --violet:#6f5cf0; --violet-ink:#b7a8ff; --violet-100:#211d38; --violet-200:#342c56;
+      --honey:#e6a53a; --honey-100:#2f2513;
+      --sh-md:0 8px 26px rgba(0,0,0,.5);
+    }
+    *{ box-sizing:border-box; }
+    html{ -webkit-text-size-adjust:100%; }
+    body{
+      margin:0; font-family:"Instrument Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      font-size:15.5px; line-height:1.65; color:var(--ink-2); background:var(--canvas);
+      background-image:radial-gradient(1100px 520px at -5% -12%, rgba(139,108,255,.16), transparent 60%);
+      background-attachment:fixed; -webkit-font-smoothing:antialiased;
+    }
+    header{
+      position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px;
+      padding:calc(12px + env(safe-area-inset-top,0px)) 20px 12px;
+      background:color-mix(in srgb, var(--canvas) 80%, transparent);
+      -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); border-bottom:1px solid var(--line);
+    }
+    .brand{ display:flex; align-items:center; gap:10px; text-decoration:none; }
+    .brand img{ width:32px; height:32px; }
+    .brand span{ font-family:"Space Grotesk",sans-serif; font-weight:700; font-size:18px; color:var(--ink); letter-spacing:-.03em; }
+    .brand span i{ font-style:normal; color:var(--violet); }
+    .langs{ margin-left:auto; display:flex; gap:2px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:2px; }
+    .langs button{
+      border:0; background:none; cursor:pointer; font:inherit; font-size:12px; font-weight:700;
+      color:var(--muted); padding:6px 10px; border-radius:8px;
+    }
+    .langs button[aria-pressed="true"]{ background:var(--violet-100); color:var(--violet-ink); }
+    main{ max-width:760px; margin:0 auto; padding:28px 16px 56px; }
+    article{
+      background:var(--surface); border:1px solid var(--line); border-radius:24px; box-shadow:var(--sh-md);
+      padding:clamp(22px,5vw,44px);
+    }
+    h1{ font-family:"Space Grotesk",sans-serif; font-size:clamp(28px,6vw,38px); line-height:1.1; letter-spacing:-.035em; color:var(--ink); margin:0 0 6px; }
+    .meta{ color:var(--muted); font-size:13.5px; margin:0 0 22px; }
+    .summary{ background:var(--violet-100); border-radius:14px; padding:14px 18px; margin:0 0 8px; }
+    .summary ul{ margin:6px 0 0; padding-left:20px; }
+    h2{ font-family:"Space Grotesk",sans-serif; font-size:20px; letter-spacing:-.02em; color:var(--ink); margin:34px 0 8px; scroll-margin-top:80px; }
+    h3{ font-size:15.5px; color:var(--ink); margin:18px 0 4px; }
+    p{ margin:8px 0; }
+    ul{ margin:8px 0; padding-left:22px; }
+    li{ margin:4px 0; }
+    a{ color:var(--violet-ink); }
+    strong{ color:var(--ink); }
+    table{ width:100%; border-collapse:collapse; margin:10px 0; font-size:14px; }
+    th, td{ text-align:left; vertical-align:top; padding:9px 10px; border-bottom:1px solid var(--line-2); }
+    th{ font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+    .table-wrap{ overflow-x:auto; }
+    .callout{ background:var(--honey-100); color:var(--honey); border-radius:14px; padding:12px 16px; }
+    .callout strong{ color:inherit; }
+    footer{ text-align:center; color:var(--muted); font-size:13px; margin-top:22px; }
+    [data-lang]{ display:none; }
+    html[lang="en"] [data-lang="en"], html[lang="ru"] [data-lang="ru"], html[lang="uz"] [data-lang="uz"]{ display:block; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="brand" href="./"><img src="assets/logo-128.png" alt="" width="32" height="32" /><span>start<i>.ai</i></span></a>
+    <div class="langs" role="group" aria-label="Language">
+      <button type="button" data-set="en">EN</button>
+      <button type="button" data-set="ru">RU</button>
+      <button type="button" data-set="uz">UZ</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ════════════════════════════ ENGLISH ════════════════════════════ -->
+    <article data-lang="en">
+      <h1>Privacy Policy</h1>
+      <p class="meta">start.ai · Effective 23 September 2026 · Last updated 23 September 2026</p>
+
+      <div class="summary">
+        <strong>In short</strong>
+        <ul>
+          <li>We use what you tell the assistant (your learning goal and answers) to build your study plan.</li>
+          <li>Your chat messages are processed by a third-party AI service provider to write the replies.</li>
+          <li>We don't sell your data, show ads, or use tracking or analytics tools.</li>
+          <li>We don't collect your location, contacts, photos or payment details.</li>
+          <li>You can delete your data at any time — see <a href="#en-delete">Deleting your data</a>.</li>
+        </ul>
+      </div>
+
+      <h2>1. Who we are</h2>
+      <p>start.ai ("the app", "we", "us") is an AI learning coach that turns a learning goal into a scheduled study plan. It is developed and operated by <strong>Shohjahon Abdullayev</strong>. For any privacy question, contact <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a>.</p>
+      <p>This policy covers the start.ai Android app and the start.ai website.</p>
+
+      <h2>2. Data we collect</h2>
+      <h3>Information you give us</h3>
+      <ul>
+        <li><strong>Display name (optional).</strong> If you enter a name in Settings, it is saved on your device and sent to our server so the assistant can greet you by name.</li>
+        <li><strong>Chat messages.</strong> What you write to the assistant and the answers you choose: your learning goal, current level, budget, available time, preferred days and deadline, and any questions or change requests about your plan. Please don't include sensitive personal information in your messages.</li>
+      </ul>
+      <h3>Information created when you use the app</h3>
+      <ul>
+        <li><strong>Your plan and progress:</strong> phases, tasks, scheduled study sessions, which sessions you mark as done, and the history of changes to your plan.</li>
+        <li><strong>A random user ID and access token</strong> that link your device to your plans. They are not tied to your real identity.</li>
+        <li><strong>Time zone and app language</strong>, so sessions land on the right days and the assistant replies in your language. The time zone is a region setting such as "Asia/Tashkent"; it is not your location.</li>
+      </ul>
+      <h3>Technical data</h3>
+      <ul>
+        <li>Like any internet service, our hosting providers receive your <strong>IP address</strong> and basic request details (time, device/browser type) when the app connects. These are used to deliver the service, keep it secure and prevent abuse (for example, daily usage limits).</li>
+      </ul>
+      <h3>Stored only on your device</h3>
+      <ul>
+        <li>Your chat list, study streak, daily-goal minutes and settings (theme, language, sound) are kept in your device's local storage and are not sent to us, except the name and access token described above.</li>
+      </ul>
+      <h3>What we do not collect</h3>
+      <p>We do not collect precise or approximate location, contacts, photos or files, microphone or camera data, payment information, or advertising IDs. The app contains no advertising and no third-party analytics or tracking SDKs.</p>
+
+      <h2>3. How we use your data</h2>
+      <ul>
+        <li>To run the assistant and build, schedule and update your study plan.</li>
+        <li>To show your progress and move missed sessions forward.</li>
+        <li>To reply in your language and at the right times for your time zone.</li>
+        <li>To keep the service working, secure and fair to use (rate and daily limits).</li>
+      </ul>
+      <p>We do not use your data for advertising, and we do not make decisions about you that have legal or similarly significant effects.</p>
+
+      <h2>4. AI processing</h2>
+      <p>To write replies and plans, the content of your chat (your messages and the relevant plan details) is sent to a <strong>third-party AI service provider</strong> that runs the AI model. The provider processes this data only to return a response to us and is bound by its own privacy and security obligations. AI replies can be wrong; please use your own judgment.</p>
+
+      <h2>5. Who we share data with</h2>
+      <p>We <strong>do not sell or rent</strong> your personal data. We share it only with service providers that help us run start.ai, and only as needed:</p>
+      <div class="table-wrap"><table>
+        <tr><th>Provider</th><th>Purpose</th><th>Data</th></tr>
+        <tr><td>AI service provider</td><td>AI replies and plan generation</td><td>Chat messages and plan details</td></tr>
+        <tr><td>Render</td><td>Hosting our server and its database</td><td>All server-side data listed above, IP address</td></tr>
+        <tr><td>Vercel</td><td>Hosting the website</td><td>IP address and request details</td></tr>
+      </table></div>
+      <p>We may also disclose data if required by law or to protect the rights and safety of users and the service.</p>
+      <p><strong>Shop and course links.</strong> The Kit section may show "Search in" links to Uzum Market, Yandex Market, Coursera, Udemy or Stepik. They open that site's own search for an item; only the item name is included in the link, never your personal data. Once you're on their site, their privacy policy applies.</p>
+
+      <h2>6. How long we keep data</h2>
+      <ul>
+        <li><strong>Server data</strong> (name, chats, plans, progress, user ID) is kept while you use start.ai, and deleted when you ask us to delete it.</li>
+        <li><strong>Server and hosting logs</strong> are kept for a limited time for security and troubleshooting.</li>
+        <li><strong>Data on your device</strong> stays until you clear it in the app or uninstall the app.</li>
+      </ul>
+
+      <h2 id="en-delete">7. Deleting your data</h2>
+      <ul>
+        <li><strong>On your device:</strong> open <em>Settings → Data → Reset app data</em> (or "Clear all chats"), or uninstall the app.</li>
+        <li><strong>On our server:</strong> email <a href="mailto:startmentorai@gmail.com?subject=Delete%20my%20start.ai%20data">startmentorai@gmail.com</a> with the subject "Delete my start.ai data" and include your <strong>User ID</strong> from <em>Settings → Data</em>. We will delete your name, chats, plans and progress within <strong>30 days</strong> and confirm by email.</li>
+      </ul>
+      <p>You can also ask us for a copy of your data or to correct it, using the same email.</p>
+
+      <h2>8. Security</h2>
+      <p>All connections between the app and our servers use encryption (HTTPS). Access to your plans requires the random access token stored on your device. No method of storage or transmission is 100% secure, but we work to protect your data.</p>
+
+      <h2>9. Children</h2>
+      <p>start.ai is not directed at children under 13, and we do not knowingly collect personal data from them. If you believe a child has given us personal data, contact us and we will delete it.</p>
+
+      <h2>10. Changes to this policy</h2>
+      <p>We may update this policy as the app changes. We will change the "Last updated" date above, and for significant changes we will let you know in the app.</p>
+
+      <h2>11. Contact</h2>
+      <p>Shohjahon Abdullayev · <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a></p>
+    </article>
+
+    <!-- ════════════════════════════ РУССКИЙ ════════════════════════════ -->
+    <article data-lang="ru">
+      <h1>Политика конфиденциальности</h1>
+      <p class="meta">start.ai · Действует с 23 сентября 2026 г. · Обновлено 23 сентября 2026 г.</p>
+
+      <div class="summary">
+        <strong>Коротко</strong>
+        <ul>
+          <li>То, что вы пишете ассистенту (цель и ответы), нужно, чтобы составить ваш учебный план.</li>
+          <li>Сообщения чата обрабатывает сторонний поставщик ИИ-услуг, чтобы написать ответ.</li>
+          <li>Мы не продаём данные, не показываем рекламу и не используем аналитику и трекеры.</li>
+          <li>Мы не собираем геолокацию, контакты, фото и платёжные данные.</li>
+          <li>Вы можете удалить свои данные в любой момент — см. <a href="#ru-delete">Удаление данных</a>.</li>
+        </ul>
+      </div>
+
+      <h2>1. Кто мы</h2>
+      <p>start.ai («приложение», «мы») — ИИ-помощник в учёбе, который превращает учебную цель в план с расписанием. Разработчик и оператор — <strong>Шохжахон Абдуллаев (Shohjahon Abdullayev)</strong>. По вопросам конфиденциальности пишите на <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a>.</p>
+      <p>Политика относится к Android-приложению start.ai и сайту start.ai.</p>
+
+      <h2>2. Какие данные мы собираем</h2>
+      <h3>Данные, которые вы сообщаете</h3>
+      <ul>
+        <li><strong>Имя (по желанию).</strong> Если вы укажете имя в настройках, оно хранится на устройстве и отправляется на наш сервер, чтобы ассистент обращался к вам по имени.</li>
+        <li><strong>Сообщения чата.</strong> То, что вы пишете ассистенту, и выбранные ответы: цель, уровень, бюджет, свободное время, удобные дни и срок, а также вопросы и просьбы изменить план. Пожалуйста, не пишите в чат чувствительные личные данные.</li>
+      </ul>
+      <h3>Данные, которые появляются при использовании</h3>
+      <ul>
+        <li><strong>План и прогресс:</strong> этапы, задачи, запланированные занятия, отметки о выполнении и история изменений плана.</li>
+        <li><strong>Случайный ID пользователя и токен доступа</strong>, которые связывают устройство с вашими планами. Они не связаны с вашей личностью.</li>
+        <li><strong>Часовой пояс и язык приложения</strong> — чтобы занятия стояли в правильные дни, а ассистент отвечал на вашем языке. Часовой пояс — это настройка региона, например «Asia/Tashkent», а не ваше местоположение.</li>
+      </ul>
+      <h3>Технические данные</h3>
+      <ul>
+        <li>Как и у любого интернет-сервиса, хостинг-провайдеры получают ваш <strong>IP-адрес</strong> и базовые сведения о запросе (время, тип устройства/браузера). Они нужны для работы сервиса, безопасности и защиты от злоупотреблений (например, дневные лимиты).</li>
+      </ul>
+      <h3>Хранится только на устройстве</h3>
+      <ul>
+        <li>Список чатов, серия дней, минуты дневной цели и настройки (тема, язык, звук) хранятся в памяти устройства и нам не передаются — кроме имени и токена, описанных выше.</li>
+      </ul>
+      <h3>Что мы не собираем</h3>
+      <p>Мы не собираем точное или приблизительное местоположение, контакты, фото и файлы, данные микрофона и камеры, платёжные данные и рекламные идентификаторы. В приложении нет рекламы и сторонних SDK аналитики или отслеживания.</p>
+
+      <h2>3. Как мы используем данные</h2>
+      <ul>
+        <li>Чтобы работал ассистент и чтобы составлять, планировать и обновлять ваш учебный план.</li>
+        <li>Чтобы показывать прогресс и переносить пропущенные занятия.</li>
+        <li>Чтобы отвечать на вашем языке и учитывать ваш часовой пояс.</li>
+        <li>Чтобы сервис работал стабильно, безопасно и честно (лимиты запросов).</li>
+      </ul>
+      <p>Мы не используем данные для рекламы и не принимаем о вас решений с юридическими или сопоставимыми последствиями.</p>
+
+      <h2>4. Обработка ИИ</h2>
+      <p>Чтобы написать ответ и план, содержимое чата (ваши сообщения и нужные детали плана) отправляется <strong>стороннему поставщику ИИ-услуг</strong>, у которого работает ИИ-модель. Поставщик обрабатывает эти данные только для того, чтобы вернуть нам ответ, и соблюдает собственные обязательства по конфиденциальности и безопасности. Ответы ИИ могут быть неточными — полагайтесь и на собственное суждение.</p>
+
+      <h2>5. С кем мы делимся данными</h2>
+      <p>Мы <strong>не продаём и не сдаём в аренду</strong> ваши персональные данные. Мы передаём их только поставщикам услуг, которые помогают работе start.ai, и только в нужном объёме:</p>
+      <div class="table-wrap"><table>
+        <tr><th>Поставщик</th><th>Зачем</th><th>Данные</th></tr>
+        <tr><td>Поставщик ИИ-услуг</td><td>Ответы ИИ и составление плана</td><td>Сообщения чата и детали плана</td></tr>
+        <tr><td>Render</td><td>Хостинг нашего сервера и базы данных</td><td>Все серверные данные выше, IP-адрес</td></tr>
+        <tr><td>Vercel</td><td>Хостинг сайта</td><td>IP-адрес и данные запроса</td></tr>
+      </table></div>
+      <p>Мы также можем раскрыть данные, если этого требует закон, или для защиты прав и безопасности пользователей и сервиса.</p>
+      <p><strong>Ссылки на магазины и курсы.</strong> В разделе «Набор» могут быть ссылки «Искать в» на Uzum Market, Yandex Market, Coursera, Udemy или Stepik. Они открывают поиск на сайте магазина; в ссылке только название товара, без ваших личных данных. На их сайте действует их политика конфиденциальности.</p>
+
+      <h2>6. Сколько мы храним данные</h2>
+      <ul>
+        <li><strong>Данные на сервере</strong> (имя, чаты, планы, прогресс, ID) хранятся, пока вы пользуетесь start.ai, и удаляются по вашему запросу.</li>
+        <li><strong>Журналы сервера и хостинга</strong> хранятся ограниченное время для безопасности и устранения неполадок.</li>
+        <li><strong>Данные на устройстве</strong> хранятся, пока вы не очистите их в приложении или не удалите приложение.</li>
+      </ul>
+
+      <h2 id="ru-delete">7. Удаление данных</h2>
+      <ul>
+        <li><strong>На устройстве:</strong> откройте <em>Настройки → Данные → Сбросить данные</em> (или «Удалить все чаты») либо удалите приложение.</li>
+        <li><strong>На сервере:</strong> напишите на <a href="mailto:startmentorai@gmail.com?subject=Delete%20my%20start.ai%20data">startmentorai@gmail.com</a> с темой «Удалить мои данные start.ai» и укажите <strong>ID пользователя</strong> из <em>Настройки → Данные</em>. Мы удалим имя, чаты, планы и прогресс в течение <strong>30 дней</strong> и подтвердим по почте.</li>
+      </ul>
+      <p>Через этот же адрес можно запросить копию своих данных или их исправление.</p>
+
+      <h2>8. Безопасность</h2>
+      <p>Все соединения между приложением и нашими серверами зашифрованы (HTTPS). Доступ к вашим планам требует случайного токена, хранящегося на устройстве. Ни один способ хранения или передачи не защищён на 100%, но мы стараемся беречь ваши данные.</p>
+
+      <h2>9. Дети</h2>
+      <p>start.ai не предназначен для детей младше 13 лет, и мы сознательно не собираем их данные. Если вы считаете, что ребёнок передал нам данные, свяжитесь с нами — мы их удалим.</p>
+
+      <h2>10. Изменения политики</h2>
+      <p>Мы можем обновлять политику вместе с приложением. Мы изменим дату «Обновлено» выше, а о существенных изменениях сообщим в приложении.</p>
+
+      <h2>11. Контакты</h2>
+      <p>Шохжахон Абдуллаев (Shohjahon Abdullayev) · <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a></p>
+    </article>
+
+    <!-- ════════════════════════════ O'ZBEKCHA ════════════════════════════ -->
+    <article data-lang="uz">
+      <h1>Maxfiylik siyosati</h1>
+      <p class="meta">start.ai · Kuchga kirgan sana: 2026-yil 23-sentabr · Oxirgi yangilanish: 2026-yil 23-sentabr</p>
+
+      <div class="summary">
+        <strong>Qisqacha</strong>
+        <ul>
+          <li>Yordamchiga yozgan narsalaringiz (maqsad va javoblar) o'quv rejangizni tuzish uchun ishlatiladi.</li>
+          <li>Chat xabarlaringizni javob yozish uchun uchinchi tomon sun'iy intellekt xizmati provayderi qayta ishlaydi.</li>
+          <li>Ma'lumotlaringizni sotmaymiz, reklama ko'rsatmaymiz, analitika va kuzatuv vositalaridan foydalanmaymiz.</li>
+          <li>Joylashuv, kontaktlar, rasmlar va to'lov ma'lumotlarini yig'maymiz.</li>
+          <li>Ma'lumotlaringizni istalgan vaqtda o'chirishingiz mumkin — <a href="#uz-delete">Ma'lumotlarni o'chirish</a> bo'limiga qarang.</li>
+        </ul>
+      </div>
+
+      <h2>1. Biz kimmiz</h2>
+      <p>start.ai («ilova», «biz») — o'quv maqsadini jadvalli rejaga aylantiradigan sun'iy intellektli o'quv yordamchisi. Ishlab chiquvchi va operator — <strong>Shohjahon Abdullayev</strong>. Maxfiylik bo'yicha savollar uchun: <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a>.</p>
+      <p>Ushbu siyosat start.ai Android ilovasi va start.ai veb-saytiga taalluqli.</p>
+
+      <h2>2. Qanday ma'lumotlarni yig'amiz</h2>
+      <h3>Siz beradigan ma'lumotlar</h3>
+      <ul>
+        <li><strong>Ism (ixtiyoriy).</strong> Sozlamalarda ism kiritsangiz, u qurilmangizda saqlanadi va yordamchi sizga ismingiz bilan murojaat qilishi uchun serverimizga yuboriladi.</li>
+        <li><strong>Chat xabarlari.</strong> Yordamchiga yozganlaringiz va tanlagan javoblaringiz: maqsad, daraja, byudjet, bo'sh vaqt, qulay kunlar va muddat, shuningdek reja haqidagi savol va o'zgartirish so'rovlari. Iltimos, chatga shaxsiy maxfiy ma'lumotlarni yozmang.</li>
+      </ul>
+      <h3>Foydalanish jarayonida paydo bo'ladigan ma'lumotlar</h3>
+      <ul>
+        <li><strong>Reja va natijalar:</strong> bosqichlar, vazifalar, rejalashtirilgan mashg'ulotlar, bajarilganlar belgisi va reja o'zgarishlari tarixi.</li>
+        <li><strong>Tasodifiy foydalanuvchi ID va kirish tokeni</strong> — qurilmangizni rejalaringiz bilan bog'laydi. Ular shaxsingizga bog'lanmagan.</li>
+        <li><strong>Vaqt mintaqasi va ilova tili</strong> — mashg'ulotlar to'g'ri kunlarga tushishi va yordamchi sizning tilingizda javob berishi uchun. Vaqt mintaqasi — bu «Asia/Tashkent» kabi hudud sozlamasi, joylashuvingiz emas.</li>
+      </ul>
+      <h3>Texnik ma'lumotlar</h3>
+      <ul>
+        <li>Har qanday internet xizmatidagi kabi, hosting provayderlarimiz <strong>IP-manzilingiz</strong> va so'rov haqidagi asosiy ma'lumotlarni (vaqt, qurilma/brauzer turi) oladi. Ular xizmatni ishlatish, xavfsizlik va suiiste'mollikning oldini olish (masalan, kunlik limitlar) uchun ishlatiladi.</li>
+      </ul>
+      <h3>Faqat qurilmangizda saqlanadi</h3>
+      <ul>
+        <li>Chatlar ro'yxati, seriya kunlari, kunlik maqsad daqiqalari va sozlamalar (mavzu, til, tovush) qurilma xotirasida saqlanadi va bizga yuborilmaydi — yuqorida aytilgan ism va tokendan tashqari.</li>
+      </ul>
+      <h3>Nimalarni yig'maymiz</h3>
+      <p>Aniq yoki taxminiy joylashuv, kontaktlar, rasm va fayllar, mikrofon va kamera ma'lumotlari, to'lov ma'lumotlari va reklama identifikatorlarini yig'maymiz. Ilovada reklama hamda uchinchi tomon analitika yoki kuzatuv SDK'lari yo'q.</p>
+
+      <h2>3. Ma'lumotlardan qanday foydalanamiz</h2>
+      <ul>
+        <li>Yordamchi ishlashi va o'quv rejangizni tuzish, jadvalga solish va yangilash uchun.</li>
+        <li>Natijalaringizni ko'rsatish va o'tkazib yuborilgan mashg'ulotlarni surish uchun.</li>
+        <li>Sizning tilingizda va vaqt mintaqangizga mos javob berish uchun.</li>
+        <li>Xizmat barqaror, xavfsiz va adolatli ishlashi uchun (so'rov limitlari).</li>
+      </ul>
+      <p>Ma'lumotlardan reklama uchun foydalanmaymiz va siz haqingizda huquqiy yoki shunga o'xshash oqibatli qarorlar qabul qilmaymiz.</p>
+
+      <h2>4. Sun'iy intellekt orqali qayta ishlash</h2>
+      <p>Javob va reja yozish uchun chat mazmuni (xabarlaringiz va rejaning kerakli tafsilotlari) sun'iy intellekt modelini ishlatadigan <strong>uchinchi tomon sun'iy intellekt xizmati provayderi</strong>ga yuboriladi. Provayder bu ma'lumotlarni faqat bizga javob qaytarish uchun qayta ishlaydi va o'zining maxfiylik hamda xavfsizlik majburiyatlariga amal qiladi. Sun'iy intellekt javoblari xato bo'lishi mumkin — o'z fikringizga ham tayaning.</p>
+
+      <h2>5. Ma'lumotlarni kim bilan ulashamiz</h2>
+      <p>Shaxsiy ma'lumotlaringizni <strong>sotmaymiz va ijaraga bermaymiz</strong>. Ularni faqat start.ai ishlashiga yordam beradigan xizmat ko'rsatuvchilarga, kerakli hajmda beramiz:</p>
+      <div class="table-wrap"><table>
+        <tr><th>Provayder</th><th>Maqsad</th><th>Ma'lumotlar</th></tr>
+        <tr><td>Sun'iy intellekt xizmati provayderi</td><td>Sun'iy intellekt javoblari va reja tuzish</td><td>Chat xabarlari va reja tafsilotlari</td></tr>
+        <tr><td>Render</td><td>Serverimiz va ma'lumotlar bazasi hostingi</td><td>Yuqoridagi barcha server ma'lumotlari, IP-manzil</td></tr>
+        <tr><td>Vercel</td><td>Veb-sayt hostingi</td><td>IP-manzil va so'rov ma'lumotlari</td></tr>
+      </table></div>
+      <p>Qonun talab qilsa yoki foydalanuvchilar va xizmat huquqlari hamda xavfsizligini himoya qilish uchun ma'lumotlarni oshkor qilishimiz mumkin.</p>
+      <p><strong>Do'kon va kurs havolalari.</strong> «Jihoz» bo'limida Uzum Market, Yandex Market, Coursera, Udemy yoki Stepik uchun «Qidirish» havolalari bo'lishi mumkin. Ular o'sha saytning o'z qidiruvini ochadi; havolada faqat mahsulot nomi bor, shaxsiy ma'lumotlaringiz emas. Ularning saytida ularning maxfiylik siyosati amal qiladi.</p>
+
+      <h2>6. Ma'lumotlarni qancha saqlaymiz</h2>
+      <ul>
+        <li><strong>Serverdagi ma'lumotlar</strong> (ism, chatlar, rejalar, natijalar, ID) start.ai dan foydalanayotganingizcha saqlanadi va so'rovingiz bo'yicha o'chiriladi.</li>
+        <li><strong>Server va hosting jurnallari</strong> xavfsizlik va nosozliklarni tuzatish uchun cheklangan muddat saqlanadi.</li>
+        <li><strong>Qurilmadagi ma'lumotlar</strong> ilovada tozalamaguningizcha yoki ilovani o'chirmaguningizcha saqlanadi.</li>
+      </ul>
+
+      <h2 id="uz-delete">7. Ma'lumotlarni o'chirish</h2>
+      <ul>
+        <li><strong>Qurilmada:</strong> <em>Sozlamalar → Ma'lumotlar → Ma'lumotlarni tozalash</em> (yoki «Barcha suhbatlarni o'chirish») ni oching yoki ilovani o'chiring.</li>
+        <li><strong>Serverda:</strong> <a href="mailto:startmentorai@gmail.com?subject=Delete%20my%20start.ai%20data">startmentorai@gmail.com</a> manziliga «start.ai ma'lumotlarimni o'chiring» mavzusida xat yozing va <em>Sozlamalar → Ma'lumotlar</em> dagi <strong>foydalanuvchi ID</strong> ni qo'shing. Ism, chatlar, rejalar va natijalarni <strong>30 kun</strong> ichida o'chirib, email orqali tasdiqlaymiz.</li>
+      </ul>
+      <p>Shu manzil orqali ma'lumotlaringiz nusxasini yoki ularni tuzatishni ham so'rashingiz mumkin.</p>
+
+      <h2>8. Xavfsizlik</h2>
+      <p>Ilova va serverlarimiz o'rtasidagi barcha ulanishlar shifrlangan (HTTPS). Rejalaringizga kirish qurilmangizda saqlanadigan tasodifiy tokenni talab qiladi. Hech bir saqlash yoki uzatish usuli 100% xavfsiz emas, lekin ma'lumotlaringizni himoya qilishga harakat qilamiz.</p>
+
+      <h2>9. Bolalar</h2>
+      <p>start.ai 13 yoshgacha bo'lgan bolalar uchun mo'ljallanmagan va biz ulardan ongli ravishda ma'lumot yig'maymiz. Agar bola bizga ma'lumot bergan deb hisoblasangiz, biz bilan bog'laning — uni o'chiramiz.</p>
+
+      <h2>10. Siyosatdagi o'zgarishlar</h2>
+      <p>Ilova o'zgarishi bilan siyosatni yangilashimiz mumkin. Yuqoridagi «Oxirgi yangilanish» sanasini o'zgartiramiz, muhim o'zgarishlar haqida esa ilovada xabar beramiz.</p>
+
+      <h2>11. Aloqa</h2>
+      <p>Shohjahon Abdullayev · <a href="mailto:startmentorai@gmail.com">startmentorai@gmail.com</a></p>
+    </article>
+
+    <footer>© 2026 start.ai · Shohjahon Abdullayev</footer>
+  </main>
+
+  <script>
+    // Language: ?lang= wins, then the app's saved choice, then the device.
+    (function () {
+      var ok = { en: 1, ru: 1, uz: 1 };
+      var saved = null;
+      try { saved = localStorage.getItem("startai_lang"); } catch (e) {}
+      var q = new URLSearchParams(location.search).get("lang");
+      var dev = (navigator.language || "en").slice(0, 2).toLowerCase();
+      var lang = ok[q] ? q : ok[saved] ? saved : ok[dev] ? dev : "en";
+      function set(l) {
+        document.documentElement.lang = l;
+        document.querySelectorAll(".langs button").forEach(function (b) {
+          b.setAttribute("aria-pressed", String(b.dataset.set === l));
+        });
+      }
+      document.querySelectorAll(".langs button").forEach(function (b) {
+        b.onclick = function () { set(b.dataset.set); };
+      });
+      set(lang);
+    })();
+  </script>
+</body>
+</html>

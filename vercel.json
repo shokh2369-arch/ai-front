@@ -1,9 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/proxy.js": { "maxDuration": 60 }
+  },
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://ai-backend-x6tp.onrender.com/api/:path*"
+      "destination": "/api/proxy?__path=:path*"
     }
   ]
 }
